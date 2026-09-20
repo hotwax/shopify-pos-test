@@ -1,6 +1,10 @@
 // Observed through WDA on Shopify POS 11.14.0, iPadOS 27.0 (2026-09-19).
 // No customer/order IDs or coordinates. Keep queries scoped as noted below.
 export const homeScreen = '~Screen.Home';
+export const cartScreen = '~Screen.Cart';
+export const checkoutButton = '~Screen.Cart.CheckoutButton';
+export const addCartButton = '~Screen.Cart.AddCartButton';
+export const searchBar = '~Component.SearchBar';
 export const homeTab = '~Component.AppNavigation.BottomTabs.Home';
 export const ordersTab = '~Component.AppNavigation.BottomTabs.Orders';
 export const ordersScreen = '~Screen.OrdersScreen';

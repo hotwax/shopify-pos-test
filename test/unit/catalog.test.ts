@@ -26,6 +26,8 @@ test('accepts a registered read-only catalog definition', () => {
   assert.equal(validateScript(smoke, registry).effect, 'read-only');
   const inspection = { ...smoke, id: 'pos.inspect-screen', name: 'Inspect current POS screen', scenario: 'pos.inspect-screen', description: 'Read-only inspection', tags: ['diagnostic'] };
   assert.equal(validateScript(inspection, registry).effect, 'read-only');
+  const cartInspection = { ...smoke, id: 'pos.inspect-cart', name: 'Inspect empty POS cart', scenario: 'pos.inspect-cart', description: 'Read-only cart inspection', tags: ['diagnostic'] };
+  assert.equal(validateScript(cartInspection, registry).effect, 'read-only');
 });
 
 for (const [label, value] of [

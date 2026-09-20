@@ -23,6 +23,16 @@ export const pos = {
     await requireTouchable(home, 'POS Home is blocked; dismiss the overlay yourself.');
   },
 
+  async assertEmptyCart(): Promise<void> {
+    await requireNoAlert();
+    const cart = await browser.$(s.cartScreen);
+    if (!await cart.isDisplayed()) throw new Error('The POS cart surface is not visible; inspect the current Home layout before testing.');
+    const checkout = await cart.$(s.checkoutButton);
+    if (!await checkout.isDisplayed() || await checkout.isEnabled()) throw new Error('The POS cart is not empty or its checkout state is not the observed empty-cart state.');
+    const clearCart = await cart.$(s.addCartButton);
+    if (await clearCart.isDisplayed() && await clearCart.isEnabled()) throw new Error('The POS cart exposes an enabled clear-cart action; do not change it automatically.');
+  },
+
   async openOrders(): Promise<void> {
     await requireNoAlert();
     const tab = await browser.$(s.ordersTab).getElement();

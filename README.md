@@ -10,11 +10,14 @@ Appium/WDA test runner, OMS reads, local run history and safety checks. Shopify
 POS stays the unmodified App Store app. Only the separate open-source
 WebDriverAgent (WDA) helper is built and signed.
 
-**Status: the standalone localhost shell, setup wizard, read-only script catalog
-and run-history UI are implemented.** The scripted Home → Orders → first order
-test has passed on a real iPad. The native test reads accessibility identifiers
-and order text through WDA; it does not need Device Hub, image recognition,
-Shopify source code or Shopify POS binaries.
+**Status: the standalone localhost shell, setup wizard, script catalog,
+read-only run history, OMS browser and Shopify POS planning page are
+implemented.** The scripted Home → Orders → first order test has passed on a
+real iPad. The native test reads accessibility identifiers and order text
+through WDA; it does not need Device Hub, image recognition, Shopify source
+code or Shopify POS binaries. Create/return/exchange cards currently collect
+reviewable inputs and explain their safety gates; they remain blocked until
+native POS context and transaction selectors are verified on the target build.
 
 ## Start the application
 
@@ -47,8 +50,11 @@ The normal teammate workflow is `./run.sh` from this repository's root:
    is deliberately read-only: it opens the first existing POS order and checks
    its detail reference. The **Connections** page also supports read-only OMS
    browsing: Shopify shops, variants, Shopify orders/locations, and OMS order
-   records with item-level returnability. POS transaction workflows remain
-   disabled until their separate native-context and safety checks are complete.
+   records with item-level returnability. The Shopify POS page lets a tester
+   choose create/return/exchange, select the real shop/location and source
+   data, and review why each mutation is blocked. POS transaction execution
+   remains disabled until its separate native-context and safety checks are
+   complete.
 
 Do not start AccxUI, a separate frontend, a separate backend, or a manually
 started Appium server for the finished toolkit. Xcode, iPad trust/signing,
@@ -116,6 +122,7 @@ npm run start
 npm run doctor
 npm run test:orders
 npm run test:inspect
+npm run test:inspect-cart
 npm run test:script -- --id pos.open-first-order
 npm run dev
 ```

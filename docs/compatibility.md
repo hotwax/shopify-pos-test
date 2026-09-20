@@ -14,10 +14,11 @@ Updated: 2026-09-20.
 | OMS profile/permissions | Profile and permissions routes returned HTTP 200 | Live contract observed |
 | OMS Shopify shops | Authenticated shop list returned two records | Live contract observed; field projection required |
 | OMS GraphQL facade | Named variant/order/location reads plus exact Shopify order-detail read returned connector envelope with `response`/`cost` | Live read observed; no arbitrary GraphQL or mutation is exposed |
+| Shopify POS planning UI | Workflow chooser, OMS-scoped shop/location/variant/order reads and exact identity display | Implemented locally; selections never change POS state |
 | Missing/invalid OMS auth | Missing token 403; invalid/expired token 401 | Fail-closed behavior confirmed |
 | POS active shop/location identity | Not independently correlated | Mutation gate remains blocked |
 | Returns/exchanges | No completed mutation performed | Native mutation screens/selectors and real-device proof remain unavailable; GUI stays fail-closed |
-| Transaction policy | Explicit `testOnly` target loader, exact-ID validation, cash-only direction checks, durable approval checkpoint, coordinator acknowledgement before commit and confirmed/unknown effect states are unit-tested | Safety foundation exists; it is not evidence that a live target is approved |
+| Transaction policy | Explicit `testOnly` target loader, exact-ID validation, cash-only direction checks, durable approval checkpoint, coordinator acknowledgement before commit, sanitized worker inputs, runner mutation guards and confirmed/unknown effect states are unit-tested | Safety foundation exists; it is not evidence that a live target is approved |
 | POS Pro and staff permissions | Not fully characterized | Exchange capability gate remains open |
 
 ## Scope rules
