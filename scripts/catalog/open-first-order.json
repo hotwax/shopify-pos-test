@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.open-first-order",
+  "name": "Open first order",
+  "description": "Read-only Shopify POS navigation from Home to the first listed order detail.",
+  "domain": "shopify-pos",
+  "scenario": "pos.open-first-order",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["smoke", "read-only"]
+}

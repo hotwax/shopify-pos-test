@@ -1,0 +1,2 @@
+<template><ion-page><ion-header><ion-toolbar><ion-title>Shopify POS</ion-title></ion-toolbar></ion-header><ion-content class="ion-padding"><h1>Shopify POS workflows</h1><p>Test-store workflows will be enabled only after device, shop and location checks are implemented.</p></ion-content></ion-page></template>
+<script setup lang="ts">import { IonContent, IonHeader, IonPage, IonTitle, IonToolbar } from '@ionic/vue';</script>

@@ -1,0 +1,2 @@
+<template><ion-page><ion-header><ion-toolbar><ion-title>Run detail</ion-title></ion-toolbar></ion-header><ion-content class="ion-padding"><p>Run: {{ id }}</p><p>The durable run journal is implemented in the next slice.</p></ion-content></ion-page></template>
+<script setup lang="ts">import { IonContent, IonHeader, IonPage, IonTitle, IonToolbar } from '@ionic/vue'; import { useRoute } from 'vue-router'; const id = String(useRoute().params.id ?? 'unknown');</script>

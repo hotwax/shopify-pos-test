@@ -10,18 +10,15 @@ Appium/WDA test runner, OMS reads, local run history and safety checks. Shopify
 POS stays the unmodified App Store app. Only the separate open-source
 WebDriverAgent (WDA) helper is built and signed.
 
-**Status: the scripted Home → Orders → first order test has passed on a real iPad.**
-The test reads native accessibility identifiers and order text through WDA;
-it does not need Device Hub, image recognition, Shopify source code or binaries.
+**Status: the standalone localhost shell and read-only script catalog are now
+implemented. The scripted Home → Orders → first order test has also passed on a
+real iPad.** The native test reads accessibility identifiers and order text
+through WDA; it does not need Device Hub, image recognition, Shopify source
+code or Shopify POS binaries.
 
 ## Start the application
 
-The browser GUI described in the design documents is not implemented in this
-checkout yet. The current verified capability is the command-line smoke test
-described below. The planned teammate launch command, once the GUI foundation is
-implemented, is `./run.sh` from this repository's root.
-
-When that launcher exists, the complete teammate workflow will be:
+The normal teammate workflow is `./run.sh` from this repository's root:
 
 1. Open **Finder**.
 2. Press **Command+Shift+G**.
@@ -40,9 +37,15 @@ When that launcher exists, the complete teammate workflow will be:
    ./run.sh
    ```
 
-6. Keep that Terminal window open. The launcher will check prerequisites, build
-   the local app when needed, start the single localhost process and open the
+6. Keep that Terminal window open. The launcher checks prerequisites, builds the
+   local app when needed, starts the single localhost process and opens the
    browser. Press **Control+C** in that same Terminal window to stop it.
+
+7. In the browser, use **Get setup** to review readiness, **Scripts** to browse
+   the checked-in catalog, and **Run history** to review accepted runs. The
+   current shell slice exposes the read-only script catalog; device execution,
+   OMS browsing and transaction workflows are added only after their safety
+   checks are implemented.
 
 Do not start AccxUI, a separate frontend, a separate backend, or a manually
 started Appium server for the finished toolkit. Xcode, iPad trust/signing,
@@ -56,9 +59,11 @@ the supported workflow.
    `package.json` (Node 24+ recommended).
 2. Connect an unlocked iPad over USB, trust the Mac, enable Developer Mode on
    the iPad, and complete any required restart. Install Shopify POS from the
-   App Store and sign into your intended test store yourself.
-   Also enable Settings → Developer → Enable UI Automation, as required by
-   [Appium's device preparation guide](https://appium.github.io/appium-xcuitest-driver/latest/getting-started/device-setup/).
+   App Store and sign into your intended test store yourself. If Apple's
+   **Enable UI Automation** setting is required on your device, enable it
+   yourself under Settings → Developer before testing. The toolkit never opens
+   Settings, toggles Developer Mode/UI Automation, changes trust, installs
+   unrelated apps or dismisses security prompts.
 3. In Xcode Settings → Apple Accounts, add your Apple account. Under Manage
    Certificates create an Apple Development certificate. A free Personal Team
    can be used for the proof; its provisioning must be renewed periodically.
@@ -76,7 +81,8 @@ the supported workflow.
    [WDA provisioning guide](https://appium.github.io/appium-xcuitest-driver/latest/getting-started/provisioning-profile/).
    If launch reports “Developer App Certificate is not trusted”, open iPad
    Settings → General → VPN & Device Management → Developer App, choose your
-   account and trust it. Reopen Shopify POS on Home before testing.
+   account and trust it. Reopen Shopify POS on Home before testing. Do not ask
+   the toolkit to repair or toggle any of these settings.
 
 The dependencies and driver are project-local; no global Appium installation is
 needed. Each teammate keeps their own `.env` and signing keys outside Git. Do not
@@ -87,6 +93,8 @@ export keys, passwords, profiles or Shopify credentials into this project.
 ```sh
 npm run test:unit
 npm run typecheck
+npm run build
+npm run start
 npm run doctor
 npm run test:orders
 ```
@@ -115,10 +123,10 @@ port 4723 first; WebdriverIO starts and stops its own local server.
 - **Unrecognized reference / missing native control:** inspect this POS
   version before updating `test/screens/pos.selectors.ts`. Do not substitute
   fixed coordinates or hardcode an order number.
-- **Not authorized for performing UI testing actions:** enable iPad Settings
-  → Developer → Enable UI Automation, end the old WDA test run in Xcode, then
-  rerun. A helper already running before the setting changed may retain the
-  failed authorization state.
+- **Not authorized for performing UI testing actions:** stop the run, complete
+  the required Apple setting/trust action yourself, then start a fresh run. The
+  toolkit reports this as a blocked prerequisite; it does not toggle the
+  setting or attempt to repair access.
 - **Signing/profile expiry:** renew WDA provisioning through Xcode using your
   own account; no Shopify binary or signing certificate is needed.
 
@@ -157,7 +165,8 @@ capture failure never replaces the original test failure.
 - Node 26.4.0, npm 11.17.0, Xcode 27.0 (27A266a).
 - Appium 3.7.0, XCUITest 12.12.6, WDA 16.12.9; dependencies locked.
 - Connected iPad13,4 on iPadOS 27.0; Shopify POS 11.14.0 (505086).
-- 29 configuration/reference/runner tests and TypeScript check passed.
+- 40 catalog/configuration/reference/runner/HTTP-policy tests and TypeScript
+  check passed; the production UI build passed.
 - Independent read-only review found no required fixes and independently
   passed all 29 unit tests, typecheck and missing-configuration validation.
 - Missing current Apple WWDR intermediate was repaired using Apple's official

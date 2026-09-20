@@ -5,6 +5,8 @@ node_modules/
 artifacts/
 .appium/
 .wda/
+.runtime/
+dist/
 .superpowers/
 *.log
 .DS_Store
