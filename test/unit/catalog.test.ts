@@ -32,6 +32,8 @@ test('accepts a registered read-only catalog definition', () => {
   assert.equal(validateScript(productSearchInspection, registry).effect, 'read-only');
   const orderActionsInspection = { ...smoke, id: 'pos.inspect-order-actions', name: 'Inspect order actions', scenario: 'pos.inspect-order-actions', description: 'Read-only order action inspection', tags: ['diagnostic'] };
   assert.equal(validateScript(orderActionsInspection, registry).effect, 'read-only');
+  const returnSurfaceInspection = { ...smoke, id: 'pos.inspect-return-surface', name: 'Inspect return and exchange surface', scenario: 'pos.inspect-return-surface', description: 'Read-only return surface inspection', tags: ['diagnostic'] };
+  assert.equal(validateScript(returnSurfaceInspection, registry).effect, 'read-only');
 });
 
 test('accepts only run parameters owned by the selected catalog scenario', () => {

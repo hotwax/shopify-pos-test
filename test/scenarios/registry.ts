@@ -58,6 +58,20 @@ export const registry: ScenarioDescriptor[] = [
     supportedAssertionModes: ['pos'],
   },
   {
+    id: 'pos.inspect-return-surface',
+    version: 1,
+    effect: 'read-only',
+    entry: 'test/specs/inspect-return-surface.spec.ts',
+    parameterSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {},
+      required: [],
+    },
+    requiredCapabilities: ['pos-native-read'],
+    supportedAssertionModes: ['pos'],
+  },
+  {
     id: 'pos.open-first-order',
     version: 1,
     effect: 'read-only',

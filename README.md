@@ -126,6 +126,7 @@ npm run test:inspect
 npm run test:inspect-cart
 npm run test:inspect-product-search
 npm run test:inspect-order-actions
+npm run test:inspect-return-surface
 npm run test:script -- --id pos.open-first-order
 npm run dev
 ```
@@ -159,6 +160,13 @@ current order-detail accessibility tree and screenshot, and requires exactly
 one visible `Return or exchange` action. It never taps that action or opens a
 return/exchange flow; inspect the captured evidence before adding any mutation
 selector.
+
+`npm run test:inspect-return-surface` is the next read-only discovery step. It
+requires the observed `Return or exchange` action to be visible, enabled and
+hittable, opens that surface without selecting a line or tender, and saves its
+accessibility tree and screenshot. It never commits a return or exchange. The
+diagnostic may leave POS on the opened surface; return POS to Home yourself
+before another run and inspect the local artifact before changing selectors.
 
 Only one iPad/worker is used. No app reset, reinstall, forced restart, automatic
 alert acceptance, whole-test retries, checkout, refunds or order modifications.
