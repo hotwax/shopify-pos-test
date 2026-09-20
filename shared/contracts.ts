@@ -92,6 +92,19 @@ export interface RunRecord {
   createdAt: string;
   resourceIds: Record<string, string[]>;
   assertions: { lane: 'pos' | 'shopify' | 'oms'; status: string; message: string }[];
+  pendingApproval?: PendingApproval;
+}
+
+export interface PendingApproval {
+  intentHash: string;
+  summary: {
+    scenario: string;
+    direction: 'collect' | 'even' | 'refund';
+    amount: Money;
+    lineCount: number;
+    sourceOrderGid?: string;
+  };
+  requestedAt: string;
 }
 
 export interface SetupCheck {

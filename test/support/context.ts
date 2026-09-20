@@ -1,5 +1,5 @@
 import type { TransactionIntent } from '../../shared/transaction.ts';
-import { consumeApproval } from '../../core/runner/approval.ts';
+import { consumeApproval, requestApproval } from '../../core/runner/approval.ts';
 import { consumeCommitCheckpoint, writeCommitCheckpoint } from '../../core/runner/checkpoint.ts';
 import { recordResource } from '../../core/runner/resources.ts';
 import { hashIntent } from '../../core/safety/intent.ts';
@@ -16,6 +16,7 @@ export interface ScenarioContext {
 export interface ScenarioContextOptions {
   root: string;
   runId: string;
+  approvalTimeoutMs?: number;
 }
 
 export function unavailableScenarioContext(): ScenarioContext {
@@ -36,8 +37,21 @@ export function createScenarioContext(options: ScenarioContextOptions = { root: 
     step: async (_name, operation) => operation(),
     requireApproval: async intent => {
       const intentHash = hashIntent(intent);
-      if (!await consumeApproval(options.root, options.runId, intentHash)) throw new Error('A matching one-time transaction approval is required.');
-      return { intentHash };
+      await requestApproval(options.root, options.runId, intentHash, {
+        scenario: intent.scenario,
+        direction: intent.expectedDirection,
+        amount: intent.maximumAbsoluteAmount,
+        lineCount: intent.returnLines.length + intent.purchaseLines.length,
+        ...(intent.originalOrderGid ? { sourceOrderGid: intent.originalOrderGid } : {}),
+      });
+      const timeout = options.approvalTimeoutMs ?? 30 * 60 * 1000;
+      if (!Number.isSafeInteger(timeout) || timeout <= 0) throw new Error('The approval timeout is invalid.');
+      const deadline = Date.now() + timeout;
+      while (Date.now() < deadline) {
+        if (await consumeApproval(options.root, options.runId, intentHash)) return { intentHash };
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      throw new Error('The transaction approval checkpoint expired before it was approved.');
     },
     recordCommitAttempt: async intentHash => { await writeCommitCheckpoint(options.root, options.runId, intentHash); },
     recordResource: async (kind, gid) => { await recordResource(options.root, options.runId, kind, gid); },

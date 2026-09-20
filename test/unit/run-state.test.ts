@@ -45,3 +45,18 @@ test('rejects events for another run and invalid business effects', () => {
   assert.throws(() => applyRunEvent(record, { ...event(1, 'run-state', { state: 'running' }), runId: 'other' }), /run ID/);
   assert.throws(() => applyRunEvent(record, event(1, 'business-effect', { effect: 'confirmed' })), /business effect/);
 });
+
+test('persists a pending approval request and clears it only after approval is granted', () => {
+  const initial = createInitialRunRecord('run-test', request, 'revision-a', '2026-09-20T00:00:00.000Z');
+  const hash = 'a'.repeat(64);
+  const waiting = applyRunEvent(initial, event(1, 'approval-required', {
+    intentHash: hash,
+    requestedAt: '2026-09-20T00:00:00.000Z',
+    summary: { scenario: 'create-cash-order', direction: 'collect', amount: { amount: '12.00', currency: 'USD' }, lineCount: 1 },
+  }));
+  assert.equal(waiting.state, 'awaiting-approval');
+  assert.equal(waiting.pendingApproval?.intentHash, hash);
+  const resumed = applyRunEvent(waiting, event(2, 'run-state', { state: 'running', clearApproval: true }));
+  assert.equal(resumed.state, 'running');
+  assert.equal(resumed.pendingApproval, undefined);
+});

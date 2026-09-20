@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { classifyWorkerFailure, createCoordinator } from '../../core/runner/coordinator.ts';
+import { requestApproval } from '../../core/runner/approval.ts';
 import { spawn } from '../../core/runner/process.ts';
 import { isTerminalState } from '../../core/runner/protocol.ts';
 import type { RunRequest } from '../../shared/contracts.ts';
@@ -115,4 +116,26 @@ test('blocks a run when the reviewed source revision is no longer current', asyn
   assert.equal(result.effect, 'not-started');
   assert.equal(workerStarted, false);
   assert.match(result.statusMessage ?? '', /revision/i);
+});
+
+test('surfaces a worker approval request and resumes only after the coordinator approves it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-'));
+  const intentHash = 'b'.repeat(64);
+  const coordinator = createCoordinator({
+    root,
+    workerFactory: async ({ runId, artifactDir }) => {
+      await requestApproval(root, runId, intentHash, { scenario: 'create-cash-order', direction: 'collect', amount: { amount: '12.00', currency: 'USD' }, lineCount: 1 });
+      await writeFile(join(artifactDir, 'result.json'), JSON.stringify({ passed: true, message: 'approved' }));
+      return spawn(process.execPath, ['-e', 'setTimeout(() => {}, 2_000)'], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? '' } });
+    },
+  });
+  const accepted = await coordinator.startRun(request);
+  await eventually(async () => (await coordinator.getRun(accepted.id)).state === 'awaiting-approval');
+  const waiting = await coordinator.getRun(accepted.id);
+  assert.equal(waiting.pendingApproval?.intentHash, intentHash);
+  await coordinator.approveCheckpoint(accepted.id);
+  await eventually(async () => (await coordinator.getRun(accepted.id)).state === 'passed');
+  const finished = await coordinator.getRun(accepted.id);
+  assert.equal(finished.pendingApproval, undefined);
+  assert.equal(finished.effect, 'not-started');
 });

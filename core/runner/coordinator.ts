@@ -8,6 +8,7 @@ import { createRunStorage, type RunStorage } from '../storage/runs.ts';
 import { acquireDeviceRunLock, type DeviceRunLock } from './lock.ts';
 import { isTerminalState, applyRunEvent, createInitialRunRecord } from './protocol.ts';
 import type { OwnedProcess } from './process.ts';
+import { approveCheckpoint as writeApproval, clearApprovalRequest, readApprovalRequest, type ApprovalRequest } from './approval.ts';
 
 export interface WorkerInput {
   runId: string;
@@ -76,6 +77,17 @@ function stateEvent(record: RunRecord, state: RunRecord['state'], data: Record<s
     at: new Date().toISOString(),
     type: 'run-state',
     data: { ...data, state },
+  };
+}
+
+function approvalEvent(record: RunRecord, request: ApprovalRequest): RunEvent {
+  return {
+    protocolVersion: 1,
+    runId: record.id,
+    sequence: record.lastSequence + 1,
+    at: new Date().toISOString(),
+    type: 'approval-required',
+    data: { intentHash: request.intentHash, requestedAt: request.requestedAt, summary: request.summary },
   };
 }
 
@@ -153,6 +165,19 @@ export class RunCoordinator {
     await this.finish(runId);
   }
 
+  async approveCheckpoint(runId: string): Promise<RunRecord> {
+    let current: RunRecord;
+    try { current = await this.read(runId); }
+    catch { throw new Error('Run was not found.'); }
+    if (isTerminalState(current.state)) throw new Error('A terminal run cannot be approved.');
+    if (current.state !== 'awaiting-approval' || !current.pendingApproval) throw new Error('This run has no pending approval checkpoint.');
+    await writeApproval(this.root, runId, current.pendingApproval.intentHash);
+    return this.append(current, stateEvent(current, 'running', {
+      clearApproval: true,
+      message: 'Approval granted. The worker may continue to the reviewed transaction checkpoint.',
+    }));
+  }
+
   async getRun(runId: string): Promise<RunRecord> { return this.read(runId); }
   async listRuns(): Promise<RunRecord[]> { return this.storage.list(); }
 
@@ -171,12 +196,30 @@ export class RunCoordinator {
 
   private async launch(record: RunRecord, active: ActiveRun): Promise<void> {
     const running = await this.append(record, stateEvent(record, 'running'));
-    active.process = await this.workerFactory!(
-      { runId: running.id, request: running.request, artifactDir: active.artifactDir },
-      event => this.appendAndNotify(event),
-    );
-    if (active.stopping) await active.process.terminate();
-    await this.waitForWorker(active);
+    let polling = false;
+    const pollApproval = async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        const requested = await readApprovalRequest(this.root, running.id);
+        if (!requested) return;
+        const current = await this.read(running.id);
+        if (isTerminalState(current.state) || current.pendingApproval?.intentHash === requested.intentHash) return;
+        await this.append(current, approvalEvent(current, requested));
+        await clearApprovalRequest(this.root, running.id);
+      } finally { polling = false; }
+    };
+    const approvalTimer = setInterval(() => { void pollApproval(); }, 100);
+    try {
+      active.process = await this.workerFactory!(
+        { runId: running.id, request: running.request, artifactDir: active.artifactDir },
+        event => this.appendAndNotify(event),
+      );
+      if (active.stopping) await active.process.terminate();
+      await this.waitForWorker(active);
+    } finally {
+      clearInterval(approvalTimer);
+    }
     const current = await this.read(running.id);
     if (isTerminalState(current.state)) { await this.finish(running.id); return; }
     let result: { passed: boolean; message?: string } | undefined;

@@ -132,7 +132,7 @@ function sendOmsError(response: ServerResponse, error: unknown): void {
 export async function createApiServer(options: ApiServerOptions): Promise<ServerHandle> {
   const session = createLocalSession();
   let revision = 'unversioned';
-  try { revision = execFileSync('git', ['-C', options.root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { /* source may not be a Git checkout */ }
+  try { revision = execFileSync('git', ['-C', options.root, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { /* source may not be a Git checkout */ }
   const server = createServer(async (request, response) => {
     securityHeaders(response);
     const address = server.address();
@@ -258,7 +258,7 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
         sendJson(response, 200, { runs: options.coordinator ? await options.coordinator.listRuns() : await createRunStorage(options.root).list() });
         return;
       }
-      const runMatch = url.pathname.match(/^\/api\/runs\/([a-zA-Z0-9_-]+)(?:\/(events|stop))?$/);
+      const runMatch = url.pathname.match(/^\/api\/runs\/([a-zA-Z0-9_-]+)(?:\/(events|stop|approve))?$/);
       if (runMatch) {
         const runId = runMatch[1];
         const action = runMatch[2];
@@ -274,6 +274,15 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
           if (!options.coordinator) { sendJson(response, 503, { ok: false, error: 'Run coordinator is unavailable.' }); return; }
           await options.coordinator.requestStop(runId);
           sendJson(response, 202, { ok: true, requested: true });
+          return;
+        }
+        if (action === 'approve' && request.method === 'POST') {
+          if (!options.coordinator) { sendJson(response, 503, { ok: false, error: 'Run coordinator is unavailable.' }); return; }
+          try {
+            sendJson(response, 200, { run: await options.coordinator.approveCheckpoint(runId) });
+          } catch (error) {
+            sendJson(response, 409, { ok: false, error: error instanceof Error ? error.message : 'The approval checkpoint could not be granted.' });
+          }
           return;
         }
         if (!action && request.method === 'GET') {

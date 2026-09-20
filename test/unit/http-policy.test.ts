@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { createApiServer } from '../../server/app.ts';
+import { createCoordinator } from '../../core/runner/coordinator.ts';
 import type { OmsService } from '../../core/oms/types.ts';
 
 async function withServer(run: (url: string) => Promise<void>): Promise<void> {
@@ -124,6 +128,25 @@ test('keeps OMS credentials on the localhost sidecar and exposes only named read
 
     const arbitrary = await fetch(`${server.url}/api/oms/graphql`, { headers });
     assert.equal(arbitrary.status, 404);
+  } finally {
+    await server.close();
+  }
+});
+
+test('approval endpoint does not expose filesystem errors and requires a pending checkpoint', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-http-'));
+  const coordinator = createCoordinator({ root });
+  const server = await createApiServer({ port: 0, mode: 'test', root, coordinator });
+  try {
+    const port = new URL(server.url).port;
+    const response = await fetch(`${server.url}/api/runs/missing-run/approve`, {
+      method: 'POST',
+      headers: { Host: `127.0.0.1:${port}`, 'X-Local-Session': server.sessionToken },
+    });
+    assert.equal(response.status, 409);
+    const body = await response.json() as { error: string };
+    assert.equal(body.error, 'Run was not found.');
+    assert.doesNotMatch(body.error, /ios-testing-http/);
   } finally {
     await server.close();
   }

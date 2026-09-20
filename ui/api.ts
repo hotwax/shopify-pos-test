@@ -67,6 +67,12 @@ export async function requestStop(id: string): Promise<void> {
   await request(`/api/runs/${encodeURIComponent(id)}/stop`, { method: 'POST' });
 }
 
+export async function approveCheckpoint(id: string): Promise<RunRecord> {
+  if (!sessionToken) await getHealth();
+  const response = await request<{ run: RunRecord }>(`/api/runs/${encodeURIComponent(id)}/approve`, { method: 'POST' });
+  return response.run;
+}
+
 export async function getOmsConnections(): Promise<{ connections: OmsConnectionSummary[] }> {
   if (!sessionToken) await getHealth();
   return request('/api/oms/connections');

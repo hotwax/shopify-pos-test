@@ -46,7 +46,7 @@ test('owned scenario context consumes the exact approval before recording a comm
   const intent = { scenario: 'create-cash-order', sourceHash: 'source', udid: 'device', context: {}, returnLines: [], purchaseLines: [{ variantGid: 'variant', quantity: 1 }], tender: 'cash', expectedDirection: 'collect', maximumAbsoluteAmount: { amount: '1.00', currency: 'USD' } } as unknown as TransactionIntent;
   const hash = (await import('../../core/safety/intent.ts')).hashIntent(intent);
   await approveCheckpoint(root, 'run-1', hash);
-  const context = createScenarioContext({ root, runId: 'run-1' });
+  const context = createScenarioContext({ root, runId: 'run-1', approvalTimeoutMs: 20 });
   assert.deepEqual(await context.requireApproval(intent), { intentHash: hash });
   await context.recordCommitAttempt(hash);
   assert.equal(await consumeCommitCheckpoint(root, 'run-1', hash), true);

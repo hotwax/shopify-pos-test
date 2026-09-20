@@ -1,5 +1,13 @@
 import type { Money, TargetContext } from './contracts.ts';
 
+export interface ApprovalSummary {
+  scenario: string;
+  direction: 'collect' | 'even' | 'refund';
+  amount: Money;
+  lineCount: number;
+  sourceOrderGid?: string;
+}
+
 export interface TransactionIntent {
   scenario: string;
   sourceHash: string;
