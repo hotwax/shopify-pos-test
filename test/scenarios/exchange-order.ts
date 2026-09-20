@@ -1,6 +1,7 @@
 import type { OmsShopifyOrderDetail, RunRequest } from '../../shared/contracts.ts';
 import type { TransactionIntent } from '../../shared/transaction.ts';
 import { hashIntent } from '../../core/safety/intent.ts';
+import type { PosContextEvidence } from '../../core/safety/environment.ts';
 import { isValidTargetContext } from '../../core/safety/environment.ts';
 import { assertExchangePrecommit, type ObservedExchangeSummary } from '../../core/safety/transaction-flow.ts';
 import { validateExchange, type ExchangeParameters } from '../../core/safety/transaction-inputs.ts';
@@ -9,6 +10,7 @@ import type { ScenarioContext } from '../support/context.ts';
 import { affectedIds, isCashOrder } from './return-order.ts';
 
 export interface ExchangeOrderDriver {
+  readContextEvidence(): Promise<PosContextEvidence>;
   prepareExchange(parameters: ExchangeParameters): Promise<void>;
   selectCash(): Promise<void>;
   readSummary(): Promise<ObservedExchangeSummary>;
@@ -45,6 +47,7 @@ export async function exchangeCashOrder(
   const parameters = validateExchange(input, remaining);
   const intent = createIntent(parameters, request, udid);
   const intentHash = hashIntent(intent);
+  await context.step('verify-pos-context', async () => context.assertAllowedIntent(intent, await driver.readContextEvidence()));
   await context.step('prepare-exchange-cart', () => driver.prepareExchange(parameters));
   await context.step('select-cash-exchange', () => driver.selectCash());
   const observed = await context.step('verify-exchange-summary', () => driver.readSummary());

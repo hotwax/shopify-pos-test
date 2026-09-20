@@ -4,11 +4,14 @@ import { consumeBridgeResponse, createObservedOrderRequest, createShopifyOrderRe
 import { consumeCommitCheckpoint, writeCommitCheckpoint } from '../../core/runner/checkpoint.ts';
 import { consumeCommitAcknowledgement, consumeCommitOutcomeAcknowledgement, requestCommitAttempt, requestCommitOutcome } from '../../core/runner/effects.ts';
 import { recordResource } from '../../core/runner/resources.ts';
-import { hashIntent } from '../../core/safety/intent.ts';
+import { assertAllowedIntent, hashIntent } from '../../core/safety/intent.ts';
+import type { PosContextEvidence } from '../../core/safety/environment.ts';
+import { loadApprovedTargets } from '../../core/safety/policy.ts';
 import type { OmsShopifyOrderDetail } from '../../shared/contracts.ts';
 
 export interface ScenarioContext {
   step<T>(name: string, operation: () => Promise<T>): Promise<T>;
+  assertAllowedIntent(intent: TransactionIntent, evidence: PosContextEvidence): Promise<void>;
   requireApproval(intent: TransactionIntent): Promise<{ intentHash: string }>;
   recordCommitAttempt(intentHash: string): Promise<void>;
   recordBusinessEffect(effect: 'confirmed' | 'unknown', intentHash: string): Promise<void>;
@@ -31,6 +34,7 @@ export function unavailableScenarioContext(): ScenarioContext {
   const unavailable = async (): Promise<never> => { throw new Error('Scenario context is not bound to an owned run.'); };
   return {
     step: async (_name, operation) => operation(),
+    assertAllowedIntent: unavailable,
     requireApproval: unavailable,
     recordCommitAttempt: unavailable,
     recordBusinessEffect: unavailable,
@@ -45,6 +49,10 @@ export function createScenarioContext(options: ScenarioContextOptions = { root: 
   if (!options.root || !options.runId) return unavailableScenarioContext();
   return {
     step: async (_name, operation) => operation(),
+    assertAllowedIntent: async (intent, evidence) => {
+      const approvedTargets = await loadApprovedTargets(options.root);
+      assertAllowedIntent(intent, evidence, approvedTargets);
+    },
     requireApproval: async intent => {
       const intentHash = hashIntent(intent);
       await requestApproval(options.root, options.runId, intentHash, {

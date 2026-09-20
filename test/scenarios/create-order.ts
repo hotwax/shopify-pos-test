@@ -1,6 +1,7 @@
 import type { RunRequest } from '../../shared/contracts.ts';
 import type { TransactionIntent } from '../../shared/transaction.ts';
 import { hashIntent } from '../../core/safety/intent.ts';
+import type { PosContextEvidence } from '../../core/safety/environment.ts';
 import { isValidTargetContext } from '../../core/safety/environment.ts';
 import { assertCreatePrecommit, type ObservedCreateSummary } from '../../core/safety/transaction-flow.ts';
 import { validateCreateOrder, type CreateOrderParameters } from '../../core/safety/transaction-inputs.ts';
@@ -8,6 +9,7 @@ import { verifyCreatedOrder } from '../../core/verification/order.ts';
 import type { ScenarioContext } from '../support/context.ts';
 
 export interface CreateOrderDriver {
+  readContextEvidence(): Promise<PosContextEvidence>;
   prepareCart(parameters: CreateOrderParameters): Promise<void>;
   selectCash(): Promise<void>;
   readSummary(): Promise<ObservedCreateSummary>;
@@ -41,6 +43,7 @@ export async function createCashOrder(
   const parameters = validateCreateOrder(input);
   const intent = createIntent(parameters, request, udid);
   const intentHash = hashIntent(intent);
+  await context.step('verify-pos-context', async () => context.assertAllowedIntent(intent, await driver.readContextEvidence()));
   await context.step('prepare-cash-order-cart', () => driver.prepareCart(parameters));
   await context.step('select-cash-tender', () => driver.selectCash());
   const observed = await context.step('verify-create-cart', () => driver.readSummary());

@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { approveCheckpoint } from '../../core/runner/approval.ts';
 import { readBridgeRequests, writeBridgeResponse } from '../../core/runner/bridge.ts';
 import { hashIntent } from '../../core/safety/intent.ts';
+import type { PosContextEvidence } from '../../core/safety/environment.ts';
 import { createScenarioContext } from '../../test/support/context.ts';
 import type { TargetContext } from '../../shared/contracts.ts';
 import type { TransactionIntent } from '../../shared/transaction.ts';
@@ -26,6 +27,27 @@ test('scenario approval waits for the exact one-time checkpoint', async () => {
   const pending = createScenarioContext({ root, runId }).requireApproval(intent);
   setTimeout(() => { void approveCheckpoint(root, runId, hashIntent(intent)); }, 25);
   assert.deepEqual(await pending, { intentHash: hashIntent(intent) });
+});
+
+test('scenario context rejects POS evidence that does not match the approved target', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-context-policy-'));
+  await mkdir(join(root, 'config'), { recursive: true });
+  await writeFile(join(root, 'config', 'test-environments.json'), JSON.stringify({
+    schemaVersion: 1,
+    targets: [{ testOnly: true, ...context }],
+  }));
+  const contextRunner = createScenarioContext({ root, runId: 'run-context-policy' });
+  const evidence: PosContextEvidence = {
+    udid: 'device-1',
+    shopGid: context.shopGid,
+    locationGid: context.locationGid,
+    observedAt: new Date().toISOString(),
+    method: 'verified-native-context',
+    evidenceHash: 'evidence-1',
+    online: true,
+  };
+  await assert.doesNotReject(() => contextRunner.assertAllowedIntent(intent, evidence));
+  await assert.rejects(() => contextRunner.assertAllowedIntent(intent, { ...evidence, locationGid: 'gid://shopify/Location/other' }), /shop or location does not match/i);
 });
 
 test('scenario context resolves an observed POS order through the owned bridge', async () => {

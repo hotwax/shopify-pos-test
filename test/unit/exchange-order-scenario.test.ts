@@ -5,6 +5,7 @@ import type { ScenarioContext } from '../../test/support/context.ts';
 import { hashIntent } from '../../core/safety/intent.ts';
 import type { TransactionIntent } from '../../shared/transaction.ts';
 import { exchangeCashOrder, type ExchangeOrderDriver } from '../../test/scenarios/exchange-order.ts';
+import type { PosContextEvidence } from '../../core/safety/environment.ts';
 
 const request: RunRequest = {
   scriptId: 'pos.exchange-cash-order', deviceProfileId: 'test-ipad', parameters: {}, assertionMode: 'pos-shopify-oms', expectedRevision: 'revision-exchange',
@@ -24,6 +25,7 @@ const after: OmsShopifyOrderDetail = {
 function contextFor(calls: string[]): ScenarioContext {
   return {
     step: async (name, operation) => { calls.push(name); return operation(); },
+    assertAllowedIntent: async () => { calls.push('context-approved'); },
     requireApproval: async (intent: TransactionIntent) => { calls.push('approval'); return { intentHash: hashIntent(intent) }; },
     recordCommitAttempt: async () => { calls.push('commit-checkpoint'); }, recordBusinessEffect: async () => { calls.push('effect-confirmed'); },
     recordResource: async (kind, gid) => { calls.push(`resource:${kind}:${gid}`); }, checkStopped: () => undefined,
@@ -35,21 +37,23 @@ function contextFor(calls: string[]): ScenarioContext {
 test('cash exchange verifies the approved direction and reads back both return and replacement sales', async () => {
   const calls: string[] = [];
   const driver: ExchangeOrderDriver = {
+    readContextEvidence: async (): Promise<PosContextEvidence> => ({ udid: 'device-1', shopGid: request.context!.shopGid, locationGid: request.context!.locationGid, observedAt: new Date().toISOString(), method: 'test', evidenceHash: 'test-evidence', online: true }),
     prepareExchange: async () => { calls.push('prepare-exchange'); }, selectCash: async () => { calls.push('select-cash'); },
     readSummary: async () => ({ returnLines: input.lines, purchaseLines: input.replacements, netDue: { amount: '2.00', currency: 'USD' }, tender: 'cash' }),
     commitCash: async () => { calls.push('commit'); },
   };
   const result = await exchangeCashOrder(input, request, contextFor(calls), driver, 'device-1');
   assert.deepEqual(result, { sourceOrderGid: input.orderGid, affectedIds: { 'shopify-order': [input.orderGid], 'shopify-return': ['gid://shopify/Return/1'], 'shopify-agreement': ['gid://shopify/SalesAgreement/1'] }, netDue: { amount: '2.00', currency: 'USD' } });
-  assert.deepEqual(calls, ['read-exchange-source', `read:${input.orderGid}`, 'prepare-exchange-cart', 'prepare-exchange', 'select-cash-exchange', 'select-cash', 'verify-exchange-summary', 'approval', 'commit-checkpoint', 'commit-exchange-cash', 'commit', 'read-shopify-exchange', `read:${input.orderGid}`, 'verify-shopify-exchange', `resource:shopify-order:${input.orderGid}`, 'resource:shopify-return:gid://shopify/Return/1', 'resource:shopify-agreement:gid://shopify/SalesAgreement/1', 'effect-confirmed']);
+  assert.deepEqual(calls, ['read-exchange-source', `read:${input.orderGid}`, 'verify-pos-context', 'context-approved', 'prepare-exchange-cart', 'prepare-exchange', 'select-cash-exchange', 'select-cash', 'verify-exchange-summary', 'approval', 'commit-checkpoint', 'commit-exchange-cash', 'commit', 'read-shopify-exchange', `read:${input.orderGid}`, 'verify-shopify-exchange', `resource:shopify-order:${input.orderGid}`, 'resource:shopify-return:gid://shopify/Return/1', 'resource:shopify-agreement:gid://shopify/SalesAgreement/1', 'effect-confirmed']);
 });
 
 test('exchange blocks direction drift before approval', async () => {
   const calls: string[] = [];
   const driver: ExchangeOrderDriver = {
+    readContextEvidence: async (): Promise<PosContextEvidence> => ({ udid: 'device-1', shopGid: request.context!.shopGid, locationGid: request.context!.locationGid, observedAt: new Date().toISOString(), method: 'test', evidenceHash: 'test-evidence', online: true }),
     prepareExchange: async () => { calls.push('prepare-exchange'); }, selectCash: async () => { calls.push('select-cash'); },
     readSummary: async () => ({ returnLines: input.lines, purchaseLines: input.replacements, netDue: { amount: '-2.00', currency: 'USD' }, tender: 'cash' }), commitCash: async () => { calls.push('commit'); },
   };
   await assert.rejects(() => exchangeCashOrder(input, request, contextFor(calls), driver, 'device-1'), /direction/i);
-  assert.deepEqual(calls, ['read-exchange-source', `read:${input.orderGid}`, 'prepare-exchange-cart', 'prepare-exchange', 'select-cash-exchange', 'select-cash', 'verify-exchange-summary']);
+  assert.deepEqual(calls, ['read-exchange-source', `read:${input.orderGid}`, 'verify-pos-context', 'context-approved', 'prepare-exchange-cart', 'prepare-exchange', 'select-cash-exchange', 'select-cash', 'verify-exchange-summary']);
 });

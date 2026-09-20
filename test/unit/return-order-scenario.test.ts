@@ -5,6 +5,7 @@ import type { ScenarioContext } from '../../test/support/context.ts';
 import { hashIntent } from '../../core/safety/intent.ts';
 import type { TransactionIntent } from '../../shared/transaction.ts';
 import { returnCashOrder, type ReturnOrderDriver } from '../../test/scenarios/return-order.ts';
+import type { PosContextEvidence } from '../../core/safety/environment.ts';
 
 const request: RunRequest = {
   scriptId: 'pos.return-cash-order', deviceProfileId: 'test-ipad', parameters: {}, assertionMode: 'pos-shopify-oms', expectedRevision: 'revision-return',
@@ -24,6 +25,7 @@ const after: OmsShopifyOrderDetail = {
 function contextFor(calls: string[], source = before): ScenarioContext {
   return {
     step: async (name, operation) => { calls.push(name); return operation(); },
+    assertAllowedIntent: async () => { calls.push('context-approved'); },
     requireApproval: async (intent: TransactionIntent) => { calls.push('approval'); return { intentHash: hashIntent(intent) }; },
     recordCommitAttempt: async () => { calls.push('commit-checkpoint'); },
     recordBusinessEffect: async () => { calls.push('effect-confirmed'); },
@@ -37,6 +39,7 @@ function contextFor(calls: string[], source = before): ScenarioContext {
 test('cash return revalidates source eligibility, checks summary, and reads back the return', async () => {
   const calls: string[] = [];
   const driver: ReturnOrderDriver = {
+    readContextEvidence: async (): Promise<PosContextEvidence> => ({ udid: 'device-1', shopGid: request.context!.shopGid, locationGid: request.context!.locationGid, observedAt: new Date().toISOString(), method: 'test', evidenceHash: 'test-evidence', online: true }),
     prepareReturn: async () => { calls.push('prepare-return'); },
     selectCash: async () => { calls.push('select-cash'); },
     readSummary: async () => ({ lines: input.lines, refund: { amount: '10.00', currency: 'USD' }, tender: 'cash' }),
@@ -45,7 +48,7 @@ test('cash return revalidates source eligibility, checks summary, and reads back
   const result = await returnCashOrder(input, request, contextFor(calls), driver, 'device-1');
   assert.deepEqual(result, { orderGid: input.orderGid, affectedIds: { 'shopify-order': [input.orderGid], 'shopify-return': ['gid://shopify/Return/1'], 'shopify-agreement': ['gid://shopify/SalesAgreement/1'] } });
   assert.deepEqual(calls, [
-    'read-return-source', `read:${input.orderGid}`, 'prepare-return-cart', 'prepare-return', 'select-cash-refund', 'select-cash', 'verify-return-summary', 'approval', 'commit-checkpoint', 'commit-return-cash', 'commit', 'read-shopify-return', `read:${input.orderGid}`, 'verify-shopify-return',
+    'read-return-source', `read:${input.orderGid}`, 'verify-pos-context', 'context-approved', 'prepare-return-cart', 'prepare-return', 'select-cash-refund', 'select-cash', 'verify-return-summary', 'approval', 'commit-checkpoint', 'commit-return-cash', 'commit', 'read-shopify-return', `read:${input.orderGid}`, 'verify-shopify-return',
     `resource:shopify-order:${input.orderGid}`, 'resource:shopify-return:gid://shopify/Return/1', 'resource:shopify-agreement:gid://shopify/SalesAgreement/1', 'effect-confirmed',
   ]);
 });
@@ -53,6 +56,7 @@ test('cash return revalidates source eligibility, checks summary, and reads back
 test('cash return refuses a non-cash source before touching native POS', async () => {
   const calls: string[] = [];
   const driver: ReturnOrderDriver = {
+    readContextEvidence: async (): Promise<PosContextEvidence> => ({ udid: 'device-1', shopGid: request.context!.shopGid, locationGid: request.context!.locationGid, observedAt: new Date().toISOString(), method: 'test', evidenceHash: 'test-evidence', online: true }),
     prepareReturn: async () => { calls.push('prepare-return'); }, selectCash: async () => { calls.push('select-cash'); },
     readSummary: async () => ({ lines: input.lines, refund: { amount: '10.00', currency: 'USD' }, tender: 'cash' }), commitCash: async () => { calls.push('commit'); },
   };

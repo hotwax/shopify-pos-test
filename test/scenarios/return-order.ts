@@ -1,6 +1,7 @@
 import type { OmsShopifyOrderDetail, RunRequest } from '../../shared/contracts.ts';
 import type { TransactionIntent } from '../../shared/transaction.ts';
 import { hashIntent } from '../../core/safety/intent.ts';
+import type { PosContextEvidence } from '../../core/safety/environment.ts';
 import { isValidTargetContext } from '../../core/safety/environment.ts';
 import { assertReturnPrecommit, type ObservedReturnSummary } from '../../core/safety/transaction-flow.ts';
 import { validateReturn, type ReturnParameters } from '../../core/safety/transaction-inputs.ts';
@@ -8,6 +9,7 @@ import { verifyReturnedOrder } from '../../core/verification/order.ts';
 import type { ScenarioContext } from '../support/context.ts';
 
 export interface ReturnOrderDriver {
+  readContextEvidence(): Promise<PosContextEvidence>;
   prepareReturn(parameters: ReturnParameters): Promise<void>;
   selectCash(): Promise<void>;
   readSummary(): Promise<ObservedReturnSummary>;
@@ -59,6 +61,7 @@ export async function returnCashOrder(
   const parameters = validateReturn(input, remaining);
   const intent = createIntent(parameters, request, udid);
   const intentHash = hashIntent(intent);
+  await context.step('verify-pos-context', async () => context.assertAllowedIntent(intent, await driver.readContextEvidence()));
   await context.step('prepare-return-cart', () => driver.prepareReturn(parameters));
   await context.step('select-cash-refund', () => driver.selectCash());
   const observed = await context.step('verify-return-summary', () => driver.readSummary());
