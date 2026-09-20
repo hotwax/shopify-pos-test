@@ -112,7 +112,7 @@ export function spawn(executable: string, args: string[], options: { cwd: string
   };
 }
 
-export function makeWorkerEnvironment(device: DeviceProfile, runId: string, artifactDir: string, port: number, wdaLocalPort: number, wdaDerivedDataPath: string): Record<string, string> {
+export function makeWorkerEnvironment(device: DeviceProfile, runId: string, artifactDir: string, port: number, wdaLocalPort: number, wdaDerivedDataPath: string, testingRoot = process.cwd()): Record<string, string> {
   if (!isAbsolute(artifactDir)) throw new Error('Artifact directory must be absolute.');
   if (!isAbsolute(wdaDerivedDataPath)) throw new Error('WDA DerivedData path must be absolute.');
   return {
@@ -122,6 +122,7 @@ export function makeWorkerEnvironment(device: DeviceProfile, runId: string, arti
     APPLE_TEAM_ID: device.teamId,
     WDA_BUNDLE_ID: device.wdaBundleId,
     WDIO_RUN_ID: runId,
+    IOS_TESTING_ROOT: testingRoot,
     RUN_ARTIFACT_DIR: artifactDir,
     APPIUM_PORT: String(port),
     WDA_LOCAL_PORT: String(wdaLocalPort),

@@ -17,7 +17,7 @@ export function createWdioWorkerFactory(root: string): WorkerFactory {
     const appiumPort = await findAvailablePort(4723);
     const wdaLocalPort = await findAvailablePort(8101);
     const wdaDerivedDataPath = resolve(root, '.runtime', 'runs', runId, 'wda');
-    const env = makeWorkerEnvironment(profile, runId, artifactDir, appiumPort, wdaLocalPort, wdaDerivedDataPath);
+    const env = makeWorkerEnvironment(profile, runId, artifactDir, appiumPort, wdaLocalPort, wdaDerivedDataPath, root);
     return spawn(resolve(root, 'node_modules/@wdio/cli/bin/wdio.js'), ['run', resolve(root, 'wdio.conf.ts')], {
       cwd: root,
       env: { ...env, WDIO_ENTRY: scenario.entry },
