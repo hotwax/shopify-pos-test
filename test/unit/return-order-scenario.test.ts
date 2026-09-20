@@ -48,7 +48,7 @@ test('cash return revalidates source eligibility, checks summary, and reads back
   const result = await returnCashOrder(input, request, contextFor(calls), driver, 'device-1');
   assert.deepEqual(result, { orderGid: input.orderGid, affectedIds: { 'shopify-order': [input.orderGid], 'shopify-return': ['gid://shopify/Return/1'], 'shopify-agreement': ['gid://shopify/SalesAgreement/1'] } });
   assert.deepEqual(calls, [
-    'read-return-source', `read:${input.orderGid}`, 'verify-pos-context', 'context-approved', 'prepare-return-cart', 'prepare-return', 'select-cash-refund', 'select-cash', 'verify-return-summary', 'approval', 'commit-checkpoint', 'commit-return-cash', 'commit', 'read-shopify-return', `read:${input.orderGid}`, 'verify-shopify-return',
+    'read-return-source', `read:${input.orderGid}`, 'verify-pos-context', 'context-approved', 'prepare-return-cart', 'prepare-return', 'select-cash-refund', 'select-cash', 'verify-return-summary', 'approval', 'verify-pos-context-before-commit', 'context-approved', 'commit-checkpoint', 'commit-return-cash', 'commit', 'read-shopify-return', `read:${input.orderGid}`, 'verify-shopify-return',
     `resource:shopify-order:${input.orderGid}`, 'resource:shopify-return:gid://shopify/Return/1', 'resource:shopify-agreement:gid://shopify/SalesAgreement/1', 'effect-confirmed',
   ]);
 });

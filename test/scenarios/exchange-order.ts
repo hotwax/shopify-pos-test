@@ -54,6 +54,7 @@ export async function exchangeCashOrder(
   assertExchangePrecommit(observed, parameters);
   const approval = await context.requireApproval(intent);
   if (approval.intentHash !== intentHash) throw new Error('The approval checkpoint does not match the frozen exchange intent.');
+  await context.step('verify-pos-context-before-commit', async () => context.assertAllowedIntent(intent, await driver.readContextEvidence()));
   await context.recordCommitAttempt(intentHash);
   await context.step('commit-exchange-cash', () => driver.commitCash());
   const after = await context.step('read-shopify-exchange', () => context.readShopifyOrder(parameters.orderGid));

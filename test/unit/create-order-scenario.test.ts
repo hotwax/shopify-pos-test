@@ -43,7 +43,7 @@ test('create cash order checks the final cart before approval and commit', async
   };
   const result = await createCashOrder(input, request, contextFor(calls), driver, 'device-1');
   assert.deepEqual(result, { orderGid: 'gid://shopify/Order/42', orderName: '#42' });
-  assert.deepEqual(calls, ['verify-pos-context', 'context-approved', 'prepare-cash-order-cart', 'prepare-cart', 'select-cash-tender', 'select-cash', 'verify-create-cart', 'approval', 'commit-checkpoint', 'commit-cash-order', 'commit', 'correlate', 'verify-shopify-create', 'read-shopify-order', 'resource:gid://shopify/Order/42', 'effect-confirmed']);
+  assert.deepEqual(calls, ['verify-pos-context', 'context-approved', 'prepare-cash-order-cart', 'prepare-cart', 'select-cash-tender', 'select-cash', 'verify-create-cart', 'approval', 'verify-pos-context-before-commit', 'context-approved', 'commit-checkpoint', 'commit-cash-order', 'commit', 'correlate', 'verify-shopify-create', 'read-shopify-order', 'resource:gid://shopify/Order/42', 'effect-confirmed']);
 });
 
 test('create cash order refuses a changed cart before approval or commit', async () => {

@@ -50,6 +50,7 @@ export async function createCashOrder(
   assertCreatePrecommit(observed, parameters);
   const approval = await context.requireApproval(intent);
   if (approval.intentHash !== intentHash) throw new Error('The approval checkpoint does not match the frozen create-order intent.');
+  await context.step('verify-pos-context-before-commit', async () => context.assertAllowedIntent(intent, await driver.readContextEvidence()));
   await context.recordCommitAttempt(intentHash);
   await context.step('commit-cash-order', () => driver.commitCash());
   const orderName = (await driver.readCompletedOrderName()).trim();

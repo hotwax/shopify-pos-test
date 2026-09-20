@@ -68,6 +68,7 @@ export async function returnCashOrder(
   assertReturnPrecommit(observed, parameters);
   const approval = await context.requireApproval(intent);
   if (approval.intentHash !== intentHash) throw new Error('The approval checkpoint does not match the frozen return intent.');
+  await context.step('verify-pos-context-before-commit', async () => context.assertAllowedIntent(intent, await driver.readContextEvidence()));
   await context.recordCommitAttempt(intentHash);
   await context.step('commit-return-cash', () => driver.commitCash());
   const after = await context.step('read-shopify-return', () => context.readShopifyOrder(parameters.orderGid));

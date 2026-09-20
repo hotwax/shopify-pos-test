@@ -44,7 +44,7 @@ test('cash exchange verifies the approved direction and reads back both return a
   };
   const result = await exchangeCashOrder(input, request, contextFor(calls), driver, 'device-1');
   assert.deepEqual(result, { sourceOrderGid: input.orderGid, affectedIds: { 'shopify-order': [input.orderGid], 'shopify-return': ['gid://shopify/Return/1'], 'shopify-agreement': ['gid://shopify/SalesAgreement/1'] }, netDue: { amount: '2.00', currency: 'USD' } });
-  assert.deepEqual(calls, ['read-exchange-source', `read:${input.orderGid}`, 'verify-pos-context', 'context-approved', 'prepare-exchange-cart', 'prepare-exchange', 'select-cash-exchange', 'select-cash', 'verify-exchange-summary', 'approval', 'commit-checkpoint', 'commit-exchange-cash', 'commit', 'read-shopify-exchange', `read:${input.orderGid}`, 'verify-shopify-exchange', `resource:shopify-order:${input.orderGid}`, 'resource:shopify-return:gid://shopify/Return/1', 'resource:shopify-agreement:gid://shopify/SalesAgreement/1', 'effect-confirmed']);
+  assert.deepEqual(calls, ['read-exchange-source', `read:${input.orderGid}`, 'verify-pos-context', 'context-approved', 'prepare-exchange-cart', 'prepare-exchange', 'select-cash-exchange', 'select-cash', 'verify-exchange-summary', 'approval', 'verify-pos-context-before-commit', 'context-approved', 'commit-checkpoint', 'commit-exchange-cash', 'commit', 'read-shopify-exchange', `read:${input.orderGid}`, 'verify-shopify-exchange', `resource:shopify-order:${input.orderGid}`, 'resource:shopify-return:gid://shopify/Return/1', 'resource:shopify-agreement:gid://shopify/SalesAgreement/1', 'effect-confirmed']);
 });
 
 test('exchange blocks direction drift before approval', async () => {
