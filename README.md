@@ -4,8 +4,10 @@ Read-only Shopify POS smoke test for a physical iPad. HotWax owns these scripts;
 Shopify POS stays the unmodified App Store app. Only the separate open-source
 WebDriverAgent (WDA) helper is built and signed.
 
-**Status: framework setup in progress; no passing real-device smoke run yet.**
-The live selector inspection and smoke scenario are gated on WDA provisioning.
+**Status: live native navigation verified; automated scenario in progress.**
+WDA is built, installed and trusted. After enabling UI Automation and restarting
+the WDA test process, Appium navigated Home → Orders → first order and read the
+matching detail reference. The repeatable smoke scenario is being implemented.
 
 ## Setup
 
@@ -15,6 +17,8 @@ The live selector inspection and smoke scenario are gated on WDA provisioning.
 2. Connect an unlocked iPad over USB, trust the Mac, enable Developer Mode on
    the iPad, and complete any required restart. Install Shopify POS from the
    App Store and sign into your intended test store yourself.
+   Also enable Settings → Developer → Enable UI Automation, as required by
+   [Appium's device preparation guide](https://appium.github.io/appium-xcuitest-driver/latest/getting-started/device-setup/).
 3. In Xcode Settings → Apple Accounts, add your Apple account. Under Manage
    Certificates create an Apple Development certificate. A free Personal Team
    can be used for the proof; its provisioning must be renewed periodically.
@@ -30,6 +34,9 @@ The live selector inspection and smoke scenario are gated on WDA provisioning.
    bundle ID from `.env`, automatic signing, then Product → Test. Complete
    signing and developer-trust prompts yourself. Follow the official
    [WDA provisioning guide](https://appium.github.io/appium-xcuitest-driver/latest/getting-started/provisioning-profile/).
+   If launch reports “Developer App Certificate is not trusted”, open iPad
+   Settings → General → VPN & Device Management → Developer App, choose your
+   account and trust it. Reopen Shopify POS on Home before testing.
 
 The dependencies and driver are project-local; no global Appium installation is
 needed. Each teammate keeps their own `.env` and signing keys outside Git. Do not
@@ -77,3 +84,21 @@ routine payload logging but should still be treated as potentially sensitive.
 Unit tests prove only our configuration checks. A typecheck or successful WDA
 build does not prove navigation works. The actual device/app versions and live
 test results will be recorded here after verification.
+
+### Verified setup (2026-09-19, America/Chicago)
+
+- Node 26.4.0, npm 11.17.0, Xcode 27.0 (27A266a).
+- Appium 3.7.0, XCUITest 12.12.6, WDA 16.12.9; dependencies locked.
+- Connected iPad13,4 on iPadOS 27.0; Shopify POS 11.14.0 (505086).
+- 19 configuration tests, TypeScript check and read-only doctor passed.
+- Missing current Apple WWDR intermediate was repaired using Apple's official
+  G3 certificate with default trust. A valid development identity now exists.
+- WDA build-for-testing and strict code-signature verification passed. After
+  the user trusted the developer certificate, Appium established a session and
+  read the POS Home accessibility tree. Enabling UI Automation, then starting
+  a fresh WDA test process, resolved the authorization failure. Native Orders
+  navigation, list-scoped scrolling, first-row selection and matching detail
+  reference were verified. No Device Hub or coordinate taps were used.
+- POS's deep native tree requires snapshotMaxDepth 62 (the supported maximum);
+  the default 50 truncated the actual order rows. A no-match search exposed
+  the loading/empty UI; the search was cleared after inspection.
