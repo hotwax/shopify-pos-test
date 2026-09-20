@@ -124,6 +124,7 @@ npm run test:orders
 npm run test:inspect
 npm run test:inspect-cart
 npm run test:inspect-product-search
+npm run test:inspect-order-actions
 npm run test:script -- --id pos.open-first-order
 npm run dev
 ```
@@ -150,6 +151,13 @@ data. It uses the observed Home search control, opens the product-search
 surface, verifies that exactly one native search field is visible, and saves
 the accessibility tree and screenshot. It does not type, select, add or price
 an item; return Shopify POS to Home yourself before another workflow.
+
+`npm run test:inspect-order-actions` is a read-only returns/exchanges
+diagnostic. It uses the existing Home → Orders → first-order smoke, captures the
+current order-detail accessibility tree and screenshot, and requires exactly
+one visible `Return or exchange` action. It never taps that action or opens a
+return/exchange flow; inspect the captured evidence before adding any mutation
+selector.
 
 Only one iPad/worker is used. No app reset, reinstall, forced restart, automatic
 alert acceptance, whole-test retries, checkout, refunds or order modifications.
