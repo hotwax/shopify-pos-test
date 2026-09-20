@@ -51,11 +51,12 @@ reader and OMS shop/location mapping can be independently correlated.
 ## Live OMS cross-check
 
 On 2026-09-20, an ephemeral authenticated read against the configured test OMS
-listed two shops. The `hc-sandbox` shop exposed 20 named locations, but none
-was named `Commerce Next`, the sale-location label present in the captured POS
-Orders screen. The second shop's named location read returned HTTP 400. The
-session logged out and emitted no credentials or resource identifiers. This is
-evidence of an unresolved target mapping, not permission to substitute a
+listed two shops. The first shop exposed 25 variants, 25 orders and 20 named
+locations, but none was named `Commerce Next`, the sale-location label present
+in the captured POS Orders screen. The second shop returned HTTP 400 for each
+of the named variant, order and location reads. The session logged out and
+emitted no credentials or resource identifiers. This is evidence of an
+unresolved target mapping/connector-read issue, not permission to substitute a
 different location or to enable mutations.
 
 ## Mutation observations still required
