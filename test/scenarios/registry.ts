@@ -72,6 +72,20 @@ export const registry: ScenarioDescriptor[] = [
     supportedAssertionModes: ['pos'],
   },
   {
+    id: 'pos.navigate-home',
+    version: 1,
+    effect: 'read-only',
+    entry: 'test/specs/navigate-home.spec.ts',
+    parameterSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {},
+      required: [],
+    },
+    requiredCapabilities: ['pos-native-read'],
+    supportedAssertionModes: ['pos'],
+  },
+  {
     id: 'pos.open-first-order',
     version: 1,
     effect: 'read-only',

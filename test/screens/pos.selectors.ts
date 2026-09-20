@@ -30,3 +30,6 @@ export const emptySearch = '-ios predicate string:type == "XCUIElementTypeStatic
 // Screen.OrderDetailsScreen occurs twice; TopSection.Content is unique.
 export const detailContent = '~Screen.OrderDetailsScreen.TopSection.Content';
 export const detailReference = '~OrderDetailsHeader.Title';
+// Observed on the order-detail modal; this is the native Close button, not a
+// coordinate or a business action.
+export const detailCloseButton = '~Component.ActionBar.PrimaryActionButton';

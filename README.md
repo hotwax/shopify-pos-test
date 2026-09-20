@@ -127,6 +127,7 @@ npm run test:inspect-cart
 npm run test:inspect-product-search
 npm run test:inspect-order-actions
 npm run test:inspect-return-surface
+npm run test:return-home
 npm run test:script -- --id pos.open-first-order
 npm run dev
 ```
@@ -167,6 +168,12 @@ hittable, opens that surface without selecting a line or tender, and saves its
 accessibility tree and screenshot. It never commits a return or exchange. The
 diagnostic may leave POS on the opened surface; return POS to Home yourself
 before another run and inspect the local artifact before changing selectors.
+
+`npm run test:return-home` is an explicit navigation utility for that case. It
+selects the observed native Home tab when POS is on another screen, verifies
+the Home screen is selected, and captures a local accessibility snapshot. It
+does not reset, reinstall or relaunch POS, dismiss alerts, change filters, or
+change store data. Business scripts still fail when started away from Home.
 
 Only one iPad/worker is used. No app reset, reinstall, forced restart, automatic
 alert acceptance, whole-test retries, checkout, refunds or order modifications.
