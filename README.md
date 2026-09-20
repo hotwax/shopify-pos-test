@@ -194,9 +194,14 @@ capture failure never replaces the original test failure.
 - POS's deep native tree requires snapshotMaxDepth 62 (the supported maximum);
   the default 50 truncated the actual order rows. A no-match search exposed
   the loading/empty UI; the search was cleared after inspection.
-- `npm run test:orders` passed twice on the physical iPad (20.3s and 21.8s
-  scenario durations). The selected first row's reference matched the
-  independently scoped order detail title; the final run left it open.
+- The underlying direct WDIO smoke passed twice on the physical iPad (20.3s and
+  21.8s scenario durations). The selected first row's reference matched the
+  independently scoped order detail title; the final direct run left it open.
+- After routing the CLI through the durable coordinator, two fresh attempts
+  were blocked before the WDA session by the local RemoteXPC/port-8100 device
+  transport failure. Both runs were recorded as `failed` with
+  `effect: not-started`; neither changed POS or Shopify data. This is an
+  environment/WDA readiness issue, not a passing coordinator device run.
 - A separate live read-only safety check passed: rejected an order-detail
   starting screen, deliberately mismatched detail reference and a no-results
   search. Search was cleared and Home restored before the final normal run.
