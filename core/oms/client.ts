@@ -1,7 +1,7 @@
 import type { Page } from '../../shared/contracts.ts';
 import { OmsSessionStore, type FetchLike } from './auth.ts';
 import { assertNamedReadQuery, listLocationsQuery, searchOrdersQuery, searchVariantsQuery, type NamedReadOperation } from './queries/documents.ts';
-import { OmsError, boundedCursor, boundedSearch, canonicalOrigin, type OmsConnectionConfig, type OmsConnectionSummary, type OmsLocation, type OmsOrder, type OmsService, type OmsShop, type OmsVariant } from './types.ts';
+import { OmsError, boundedCursor, boundedSearch, canonicalOrigin, type OmsConnectionConfig, type OmsConnectionSummary, type OmsLocation, type OmsOrder, type OmsOrderDetail, type OmsOrderItem, type OmsOrderRecord, type OmsService, type OmsShop, type OmsVariant } from './types.ts';
 
 function object(value: unknown): Record<string, any> {
   if (!value || typeof value !== 'object') throw new OmsError('invalid-data', 'The OMS returned an invalid JSON object.');
@@ -29,6 +29,86 @@ function requiredString(value: unknown, label: string): string {
   const result = String(value ?? '').trim();
   if (!result) throw new OmsError('invalid-data', `The OMS returned a shop record without ${label}.`);
   return result;
+}
+
+function optionalString(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    value = record.uomId ?? record.currencyUomId ?? record.id ?? record.code;
+  }
+  const result = String(value ?? '').trim();
+  return result || null;
+}
+
+function optionalNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const result = Number(value);
+  return Number.isFinite(result) ? result : null;
+}
+
+function optionalMoney(value: unknown): string | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    value = (value as Record<string, unknown>).amount;
+  }
+  return optionalString(value);
+}
+
+function orderPageIndex(cursor: string | undefined): number {
+  const value = boundedCursor(cursor);
+  if (value === null) return 0;
+  if (!/^\d+$/.test(value)) throw new OmsError('invalid-data', 'The OMS order page cursor is invalid.');
+  const pageIndex = Number(value);
+  if (!Number.isSafeInteger(pageIndex) || pageIndex > 10_000) throw new OmsError('invalid-data', 'The OMS order page cursor is out of range.');
+  return pageIndex;
+}
+
+function mapOrderRecord(raw: Record<string, any>): OmsOrderRecord {
+  const orderId = requiredString(raw.orderId, 'an OMS order ID');
+  const groups = array(raw.shipGroups);
+  const itemCount = Array.isArray(raw.contents)
+    ? raw.contents.length
+    : groups.reduce((count, group) => count + array(group.items).length, 0);
+  return {
+    orderId,
+    orderName: optionalString(raw.orderName) ?? orderId,
+    externalId: optionalString(raw.externalId),
+    statusId: optionalString(raw.statusId ?? raw.orderStatusId),
+    orderDate: optionalString(raw.orderDate),
+    grandTotal: optionalMoney(raw.grandTotal),
+    currency: optionalString(raw.currencyUom ?? raw.currency),
+    itemCount,
+  };
+}
+
+function mapOrderDetail(raw: Record<string, any>): OmsOrderDetail {
+  const detail = object(raw.orderDetail);
+  const orderId = requiredString(detail.orderId, 'an OMS order ID');
+  const groups = array(detail.shipGroups);
+  const items: OmsOrderItem[] = groups.flatMap(group => array(group.items).map(item => ({
+    orderItemSeqId: requiredString(item.orderItemSeqId, 'an OMS order item ID'),
+    productId: optionalString(item.productId) ?? '',
+    productName: optionalString(item.internalName),
+    sku: optionalString(item.sku),
+    quantity: optionalNumber(item.quantity ?? item.itemQuantity),
+    shippedQuantity: optionalNumber(item.shippedQuantity),
+    returnableQuantity: optionalNumber(item.returnableQuantity),
+    alreadyReturnedQuantity: optionalNumber(item.alreadyReturnedQuantity),
+    unitPrice: optionalMoney(item.unitPrice),
+    shipGroupSeqId: optionalString(item.shipGroupSeqId ?? group.shipGroupSeqId),
+    facilityId: optionalString(item.facilityId ?? group.facilityId),
+    itemStatusId: optionalString(item.itemStatusId),
+  })));
+  return {
+    orderId,
+    orderName: optionalString(detail.orderName) ?? orderId,
+    externalId: optionalString(detail.orderExternalId ?? detail.externalId),
+    statusId: optionalString(detail.orderStatusId ?? detail.statusId),
+    orderDate: optionalString(detail.orderDate),
+    grandTotal: optionalMoney(detail.grandTotal),
+    currency: optionalString(detail.currencyUom ?? detail.currency),
+    items,
+  };
 }
 
 export class OmsClient implements OmsService {
@@ -120,6 +200,33 @@ export class OmsClient implements OmsService {
   async searchOrders(connectionId: string, connectorShopId: string, input: { search: string; cursor?: string }): Promise<Page<OmsOrder>> {
     const data = await this.graphql(connectionId, connectorShopId, 'searchOrders', searchOrdersQuery, { first: 25, after: boundedCursor(input.cursor), query: boundedSearch(input.search) || null });
     return page(data.orders, raw => ({ gid: requiredString(raw.id, 'an order ID'), name: requiredString(raw.name, 'an order name'), financialStatus: raw.displayFinancialStatus == null ? null : String(raw.displayFinancialStatus), fulfillmentStatus: raw.displayFulfillmentStatus == null ? null : String(raw.displayFulfillmentStatus) }));
+  }
+
+  async searchOrderRecords(connectionId: string, input: { search?: string; cursor?: string }): Promise<Page<OmsOrderRecord>> {
+    const search = boundedSearch(input.search);
+    const base = new URLSearchParams({ pageSize: '25', orderTypeId: 'SALES_ORDER', orderByField: '-orderDate' });
+    if (search) {
+      // The OMS list resource supports exact field filters. Try the three stable
+      // identifiers in order so a caller can paste an OMS ID, order name, or
+      // connector external ID without introducing an arbitrary query proxy.
+      for (const field of ['orderId', 'orderName', 'externalId']) {
+        const params = new URLSearchParams(base);
+        params.set(field, search);
+        const rows = array(await this.get(connectionId, `/rest/s1/oms/orders?${params.toString()}`));
+        if (rows.length) return { items: rows.map(mapOrderRecord), nextCursor: null };
+      }
+      return { items: [], nextCursor: null };
+    }
+    const pageIndex = orderPageIndex(input.cursor);
+    base.set('pageIndex', String(pageIndex));
+    const rows = array(await this.get(connectionId, `/rest/s1/oms/orders?${base.toString()}`));
+    return { items: rows.map(mapOrderRecord), nextCursor: rows.length === 25 ? String(pageIndex + 1) : null };
+  }
+
+  async getOrderDetail(connectionId: string, orderId: string): Promise<OmsOrderDetail> {
+    const value = orderId.trim();
+    if (!/^[A-Za-z0-9_.-]{1,120}$/.test(value)) throw new OmsError('invalid-data', 'The OMS order ID is invalid.');
+    return mapOrderDetail(object(await this.get(connectionId, `/rest/s1/oms/orders/${encodeURIComponent(value)}`)));
   }
 
   async listLocations(connectionId: string, connectorShopId: string, input: { cursor?: string }): Promise<Page<OmsLocation>> {

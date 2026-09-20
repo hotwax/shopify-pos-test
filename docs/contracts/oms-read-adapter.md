@@ -106,3 +106,31 @@ cursors returned another page for both variants and orders. The process logged
 out before exit. This proves the verified
 BASIC login and named read envelope for this account, not mutation permission
 or POS shop/location identity.
+
+## OMS order reads for return/exchange planning
+
+The same authenticated session can read the OMS order model directly. These
+routes are separate from Shopify Admin GraphQL: a Shopify order GID is not
+assumed to be an OMS `orderId`.
+
+```text
+GET /rest/s1/oms/orders?pageSize=25&pageIndex=0&orderTypeId=SALES_ORDER&orderByField=-orderDate
+GET /rest/s1/oms/orders?orderId=<exact OMS order ID>&dependentLevels=1
+GET /rest/s1/oms/orders/<exact OMS order ID>
+```
+
+The list route returned 25 records per page. `pageIndex=1` and `pageIndex=2`
+returned distinct subsequent pages during live verification. Exact `orderId`,
+`orderName`, and `externalId` filters were accepted. The detail route returned
+an `orderDetail` object with ship groups and item fields including
+`orderItemSeqId`, `productId`, `quantity`, `shippedQuantity`,
+`returnableQuantity`, `alreadyReturnedQuantity`, `unitPrice`, and facility or
+status identifiers.
+
+The desktop adapter projects only order identifiers, status/date/total, product
+identifiers, quantities, prices, facility IDs, and backend-provided returnability
+fields. Customer names, email addresses, addresses, payment details, raw
+connector configuration, and unrecognized fields are not sent to the browser.
+Missing `returnableQuantity` stays unavailable; the toolkit does not infer
+eligibility by subtracting quantities. These reads inform a future POS return
+or exchange workflow but do not enable or perform a mutation.

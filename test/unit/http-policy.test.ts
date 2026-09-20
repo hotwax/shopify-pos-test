@@ -86,6 +86,8 @@ test('keeps OMS credentials on the localhost sidecar and exposes only named read
     shops: async () => [{ connectorShopId: 'shop-1', shopGid: 'gid://shopify/Shop/1', shopDomain: 'test.myshopify.com', name: 'Test', locationGid: null, currency: 'USD', timezone: 'UTC' }],
     searchVariants: async () => ({ items: [], nextCursor: null }),
     searchOrders: async () => ({ items: [], nextCursor: null }),
+    searchOrderRecords: async () => ({ items: [{ orderId: 'M1', orderName: 'M1', externalId: null, statusId: 'ORDER_APPROVED', orderDate: null, grandTotal: null, currency: null, itemCount: 0 }], nextCursor: null }),
+    getOrderDetail: async () => ({ orderId: 'M1', orderName: 'M1', externalId: null, statusId: 'ORDER_APPROVED', orderDate: null, grandTotal: null, currency: null, items: [] }),
     listLocations: async () => ({ items: [], nextCursor: null }),
   };
   const server = await createApiServer({ port: 0, mode: 'test', root: process.cwd(), oms });
@@ -100,6 +102,17 @@ test('keeps OMS credentials on the localhost sidecar and exposes only named read
     const shops = await fetch(`${server.url}/api/oms/shops?connectionId=local`, { headers });
     assert.equal(shops.status, 200);
     assert.equal((await shops.json() as { shops: { connectorShopId: string }[] }).shops[0]?.connectorShopId, 'shop-1');
+
+    const records = await fetch(`${server.url}/api/oms/orders/records`, { method: 'POST', headers, body: JSON.stringify({ connectionId: 'local' }) });
+    assert.equal(records.status, 200);
+    assert.equal((await records.json() as { items: { orderId: string }[] }).items[0]?.orderId, 'M1');
+
+    const detail = await fetch(`${server.url}/api/oms/orders/detail`, { method: 'POST', headers, body: JSON.stringify({ connectionId: 'local', orderId: 'M1' }) });
+    assert.equal(detail.status, 200);
+    assert.equal((await detail.json() as { order: { orderId: string } }).order.orderId, 'M1');
+
+    const unsafeDetail = await fetch(`${server.url}/api/oms/orders/detail`, { method: 'POST', headers, body: JSON.stringify({ connectionId: 'local', orderId: '../M1' }) });
+    assert.equal(unsafeDetail.status, 400);
 
     const arbitrary = await fetch(`${server.url}/api/oms/graphql`, { headers });
     assert.equal(arbitrary.status, 404);

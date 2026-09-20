@@ -127,4 +127,38 @@ export interface OmsShop {
 
 export interface OmsVariant { gid: string; productGid: string; title: string; productTitle: string; sku: string | null; }
 export interface OmsOrder { gid: string; name: string; financialStatus: string | null; fulfillmentStatus: string | null; }
+export interface OmsOrderRecord {
+  orderId: string;
+  orderName: string;
+  externalId: string | null;
+  statusId: string | null;
+  orderDate: string | null;
+  grandTotal: string | null;
+  currency: string | null;
+  itemCount: number;
+}
+export interface OmsOrderItem {
+  orderItemSeqId: string;
+  productId: string;
+  productName: string | null;
+  sku: string | null;
+  quantity: number | null;
+  shippedQuantity: number | null;
+  returnableQuantity: number | null;
+  alreadyReturnedQuantity: number | null;
+  unitPrice: string | null;
+  shipGroupSeqId: string | null;
+  facilityId: string | null;
+  itemStatusId: string | null;
+}
+export interface OmsOrderDetail {
+  orderId: string;
+  orderName: string;
+  externalId: string | null;
+  statusId: string | null;
+  orderDate: string | null;
+  grandTotal: string | null;
+  currency: string | null;
+  items: OmsOrderItem[];
+}
 export interface OmsLocation { gid: string; name: string; }

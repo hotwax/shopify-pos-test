@@ -38,6 +38,43 @@ export interface OmsOrder {
   fulfillmentStatus: string | null;
 }
 
+export interface OmsOrderRecord {
+  orderId: string;
+  orderName: string;
+  externalId: string | null;
+  statusId: string | null;
+  orderDate: string | null;
+  grandTotal: string | null;
+  currency: string | null;
+  itemCount: number;
+}
+
+export interface OmsOrderItem {
+  orderItemSeqId: string;
+  productId: string;
+  productName: string | null;
+  sku: string | null;
+  quantity: number | null;
+  shippedQuantity: number | null;
+  returnableQuantity: number | null;
+  alreadyReturnedQuantity: number | null;
+  unitPrice: string | null;
+  shipGroupSeqId: string | null;
+  facilityId: string | null;
+  itemStatusId: string | null;
+}
+
+export interface OmsOrderDetail {
+  orderId: string;
+  orderName: string;
+  externalId: string | null;
+  statusId: string | null;
+  orderDate: string | null;
+  grandTotal: string | null;
+  currency: string | null;
+  items: OmsOrderItem[];
+}
+
 export interface OmsLocation {
   gid: string;
   name: string;
@@ -50,6 +87,8 @@ export interface OmsService {
   shops(connectionId: string): Promise<OmsShop[]>;
   searchVariants(connectionId: string, connectorShopId: string, input: { search: string; cursor?: string }): Promise<Page<OmsVariant>>;
   searchOrders(connectionId: string, connectorShopId: string, input: { search: string; cursor?: string }): Promise<Page<OmsOrder>>;
+  searchOrderRecords(connectionId: string, input: { search?: string; cursor?: string }): Promise<Page<OmsOrderRecord>>;
+  getOrderDetail(connectionId: string, orderId: string): Promise<OmsOrderDetail>;
   listLocations(connectionId: string, connectorShopId: string, input: { cursor?: string }): Promise<Page<OmsLocation>>;
 }
 

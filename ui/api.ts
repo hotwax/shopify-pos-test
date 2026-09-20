@@ -1,4 +1,4 @@
-import type { DeviceProfile, OmsConnectionSummary, OmsLocation, OmsOrder, OmsShop, OmsVariant, RunRecord, ScriptDefinition, SetupCheck } from '../shared/contracts.ts';
+import type { DeviceProfile, OmsConnectionSummary, OmsLocation, OmsOrder, OmsOrderDetail, OmsOrderRecord, OmsShop, OmsVariant, RunRecord, ScriptDefinition, SetupCheck } from '../shared/contracts.ts';
 
 let sessionToken: string | null = null;
 
@@ -97,6 +97,16 @@ export async function searchOmsVariants(body: ShopReadRequest): Promise<{ items:
 export async function searchOmsOrders(body: ShopReadRequest): Promise<{ items: OmsOrder[]; nextCursor: string | null }> {
   if (!sessionToken) await getHealth();
   return request('/api/oms/orders/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+
+export async function searchOmsOrderRecords(body: { connectionId: string; search?: string; cursor?: string }): Promise<{ items: OmsOrderRecord[]; nextCursor: string | null }> {
+  if (!sessionToken) await getHealth();
+  return request('/api/oms/orders/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+
+export async function getOmsOrderDetail(connectionId: string, orderId: string): Promise<{ order: OmsOrderDetail }> {
+  if (!sessionToken) await getHealth();
+  return request('/api/oms/orders/detail', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ connectionId, orderId }) });
 }
 
 export async function listOmsLocations(body: ShopReadRequest): Promise<{ items: OmsLocation[]; nextCursor: string | null }> {

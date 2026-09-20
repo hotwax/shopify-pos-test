@@ -45,8 +45,10 @@ The normal teammate workflow is `./run.sh` from this repository's root:
    read-only readiness checks, **Scripts** to browse and launch checked-in
    scripts, and **Run history** to review accepted runs. The first GUI script
    is deliberately read-only: it opens the first existing POS order and checks
-   its detail reference. OMS browsing and transaction workflows are added only
-   after their separate safety checks are implemented.
+   its detail reference. The **Connections** page also supports read-only OMS
+   browsing: Shopify shops, variants, Shopify orders/locations, and OMS order
+   records with item-level returnability. POS transaction workflows remain
+   disabled until their separate native-context and safety checks are complete.
 
 Do not start AccxUI, a separate frontend, a separate backend, or a manually
 started Appium server for the finished toolkit. Xcode, iPad trust/signing,
@@ -90,10 +92,11 @@ the supported workflow.
 The dependencies and driver are project-local; no global Appium installation is
 needed. Each teammate keeps their own `.env` and signing keys outside Git. Do not
 export keys, passwords, profiles or Shopify credentials into this project. The
-OMS page supports the verified BASIC login mode and read-only shop, variant,
-order and location reads. The sidecar keeps the bearer token in memory until
-logout or restart; it does not persist the password or token. No arbitrary
-GraphQL text, Shopify mutation or transaction workflow is exposed yet.
+OMS page supports the verified BASIC login mode and named, read-only shop,
+variant, Shopify order/location, and OMS order/detail reads. The sidecar keeps
+the bearer token in memory until logout or restart; it does not persist the
+password or token. No arbitrary GraphQL text, Shopify mutation or POS
+transaction workflow is exposed yet.
 
 ## Commands and safety
 

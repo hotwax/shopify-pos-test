@@ -77,3 +77,50 @@ test('maps HTTP 429 and bounds caller-controlled pagination input', async () => 
   await assert.rejects(() => client.listLocations('local', 'connector-1', { cursor: 'x'.repeat(513) }), (error: unknown) => error instanceof OmsError && error.code === 'invalid-data');
   await assert.rejects(() => client.listLocations('local', 'connector-1', {}), (error: unknown) => error instanceof OmsError && error.code === 'rate-limited');
 });
+
+test('reads paginated OMS order records and sanitizes return detail fields', async () => {
+  const { client, queued } = await loggedIn([
+    json({ loginOptions: ['BASIC'] }),
+    json({ token: 'runtime-token', expirationTime: new Date(Date.now() + 60_000).toISOString() }),
+    json({ userId: 'user-1' }),
+    json([{
+      orderId: 'M100', orderName: '100', externalId: 'external-100', statusId: 'ORDER_APPROVED',
+      orderDate: '2026-09-20', grandTotal: 12.5, currencyUom: 'USD',
+      contents: [{ orderItemSeqId: '01' }], shipGroups: []
+    }]),
+    json({ orderDetail: {
+      orderId: 'M100', orderName: '100', orderExternalId: 'external-100', orderStatusId: 'ORDER_APPROVED',
+      orderDate: '2026-09-20', grandTotal: 12.5, currencyUom: 'USD', shipGroups: [{ shipGroupSeqId: '00001', facilityId: 'STORE_1', items: [{
+        orderItemSeqId: '01', productId: 'PROD_1', internalName: 'Blue shirt', sku: 'BLUE', quantity: 2,
+        shippedQuantity: 2, returnableQuantity: 1, alreadyReturnedQuantity: 1, unitPrice: 6.25, itemStatusId: 'ITEM_COMPLETED'
+      }] }]
+    } }),
+  ]);
+
+  const page = await client.searchOrderRecords('local', {});
+  assert.deepEqual(page.items, [{ orderId: 'M100', orderName: '100', externalId: 'external-100', statusId: 'ORDER_APPROVED', orderDate: '2026-09-20', grandTotal: '12.5', currency: 'USD', itemCount: 1 }]);
+  assert.equal(page.nextCursor, null);
+
+  const detail = await client.getOrderDetail('local', 'M100');
+  assert.deepEqual(detail, {
+    orderId: 'M100', orderName: '100', externalId: 'external-100', statusId: 'ORDER_APPROVED', orderDate: '2026-09-20', grandTotal: '12.5', currency: 'USD',
+    items: [{ orderItemSeqId: '01', productId: 'PROD_1', productName: 'Blue shirt', sku: 'BLUE', quantity: 2, shippedQuantity: 2, returnableQuantity: 1, alreadyReturnedQuantity: 1, unitPrice: '6.25', shipGroupSeqId: '00001', facilityId: 'STORE_1', itemStatusId: 'ITEM_COMPLETED' }]
+  });
+  assert.match(queued.calls.at(-2)?.input ?? '', /pageSize=25/);
+  assert.match(queued.calls.at(-1)?.input ?? '', /oms\/orders\/M100$/);
+});
+
+test('uses exact OMS identifier fallbacks and rejects unsafe order detail paths', async () => {
+  const { client, queued } = await loggedIn([
+    json({ loginOptions: ['BASIC'] }),
+    json({ token: 'runtime-token', expirationTime: new Date(Date.now() + 60_000).toISOString() }),
+    json({ userId: 'user-1' }),
+    json([]),
+    json([{ orderId: 'M100', orderName: '100', statusId: 'ORDER_APPROVED' }]),
+  ]);
+  const page = await client.searchOrderRecords('local', { search: '100' });
+  assert.equal(page.items[0]?.orderId, 'M100');
+  assert.match(queued.calls.at(-2)?.input ?? '', /orderId=100/);
+  assert.match(queued.calls.at(-1)?.input ?? '', /orderName=100/);
+  await assert.rejects(() => client.getOrderDetail('local', '../M100'), (error: unknown) => error instanceof OmsError && error.code === 'invalid-data');
+});
