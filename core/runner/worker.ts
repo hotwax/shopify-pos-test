@@ -6,6 +6,7 @@ import type { WorkerFactory } from './coordinator.ts';
 import { registry } from '../../test/scenarios/registry.ts';
 import { readMutationReadiness } from '../safety/readiness.ts';
 import { assertScenarioCanRun } from './guards.ts';
+import { validateRunRequestAgainstCatalog } from '../catalog/validate.ts';
 
 export function createWdioWorkerFactory(root: string): WorkerFactory {
   return async ({ runId, request, artifactDir, inputFile }) => {
@@ -14,6 +15,7 @@ export function createWdioWorkerFactory(root: string): WorkerFactory {
     const catalog = await loadCatalog(root);
     const script = catalog.scripts.find(candidate => candidate.id === request.scriptId);
     if (!script) throw new Error('The selected catalog script is unavailable.');
+    validateRunRequestAgainstCatalog(request, catalog.scripts, registry);
     const scenario = registry.find(candidate => candidate.id === script.scenario);
     if (!scenario) throw new Error('The selected scenario is unavailable.');
     assertScenarioCanRun(scenario.effect, request, await readMutationReadiness(root));

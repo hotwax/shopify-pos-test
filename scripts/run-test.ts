@@ -9,6 +9,7 @@ import { readDeviceConfig } from '../config/device.ts';
 import { registry } from '../test/scenarios/registry.ts';
 import { readMutationReadiness } from '../core/safety/readiness.ts';
 import { assertScenarioCanRun } from '../core/runner/guards.ts';
+import { validateRunRequestAgainstCatalog } from '../core/catalog/validate.ts';
 
 const root = resolve(import.meta.dirname, '..');
 dotenv.config({ quiet: true });
@@ -19,16 +20,18 @@ if (!scriptId) throw new Error('Provide a catalog script ID with --id <id>.');
 const catalog = await loadCatalog(root);
 const script = catalog.scripts.find(candidate => candidate.id === scriptId);
 if (!script) throw new Error(`Catalog script is unavailable: ${scriptId}`);
-const scenario = registry.find(candidate => candidate.id === script.scenario);
-if (!scenario) throw new Error(`Scenario is unavailable: ${script.scenario}`);
-const device = readDeviceConfig(process.env);
-assertScenarioCanRun(scenario.effect, {
+const request = {
   scriptId: script.id,
-  deviceProfileId: device.udid,
+  deviceProfileId: 'cli-device',
   parameters: script.parameters,
   assertionMode: script.assertionMode,
   expectedRevision: 'pending',
-}, await readMutationReadiness(root));
+} as const;
+validateRunRequestAgainstCatalog(request, catalog.scripts, registry);
+const scenario = registry.find(candidate => candidate.id === script.scenario);
+if (!scenario) throw new Error(`Scenario is unavailable: ${script.scenario}`);
+const device = readDeviceConfig(process.env);
+assertScenarioCanRun(scenario.effect, { ...request, deviceProfileId: device.udid }, await readMutationReadiness(root));
 const appiumPort = await findAvailablePort(4723);
 const wdaLocalPort = await findAvailablePort(8101);
 const revision = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();

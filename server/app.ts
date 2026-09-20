@@ -12,6 +12,8 @@ import { sendJson, sendText } from './routes.ts';
 import { serveStatic } from './static.ts';
 import { isValidTargetContext } from '../core/safety/environment.ts';
 import { readMutationReadiness } from '../core/safety/readiness.ts';
+import { validateRunRequestAgainstCatalog } from '../core/catalog/validate.ts';
+import { registry } from '../test/scenarios/registry.ts';
 
 export interface ApiServerOptions {
   port: number;
@@ -309,6 +311,13 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
             return;
           }
           if (body.expectedRevision.length > 100 || body.scriptId.length > 100 || body.deviceProfileId.length > 100) { sendJson(response, 400, { ok: false, error: 'Run request is too large.' }); return; }
+          const catalog = await loadCatalog(options.root);
+          try {
+            validateRunRequestAgainstCatalog(body, catalog.scripts, registry);
+          } catch (error) {
+            sendJson(response, 400, { ok: false, error: error instanceof Error ? error.message : 'The run request does not match the selected catalog script.' });
+            return;
+          }
           sendJson(response, 202, await options.coordinator.startRun(body));
         } catch (error) { sendJson(response, 400, { ok: false, error: error instanceof Error ? error.message : 'Run could not be started.' }); }
         return;

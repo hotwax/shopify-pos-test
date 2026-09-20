@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { loadCatalog } from '../../core/catalog/load.ts';
-import { validateScript } from '../../core/catalog/validate.ts';
+import { validateRunRequestAgainstCatalog, validateScript } from '../../core/catalog/validate.ts';
 import { registry } from '../../test/scenarios/registry.ts';
-import type { ScriptDefinition } from '../../shared/contracts.ts';
+import type { RunRequest, ScriptDefinition } from '../../shared/contracts.ts';
 
 const smoke: ScriptDefinition = {
   schemaVersion: 1,
@@ -29,6 +29,28 @@ test('accepts a registered read-only catalog definition', () => {
   const cartInspection = { ...smoke, id: 'pos.inspect-cart', name: 'Inspect empty POS cart', scenario: 'pos.inspect-cart', description: 'Read-only cart inspection', tags: ['diagnostic'] };
   assert.equal(validateScript(cartInspection, registry).effect, 'read-only');
 });
+
+test('accepts only run parameters owned by the selected catalog scenario', () => {
+  assert.doesNotThrow(() => validateRunRequestAgainstCatalog({
+    scriptId: smoke.id,
+    deviceProfileId: 'test-ipad',
+    parameters: {},
+    assertionMode: smoke.assertionMode,
+    expectedRevision: 'revision-a',
+  }, [smoke], registry));
+});
+
+const invalidRequests: Array<[string, RunRequest]> = [
+  ['an unknown script', { scriptId: 'pos.unknown', deviceProfileId: 'test-ipad', parameters: {}, assertionMode: 'pos' as const, expectedRevision: 'revision-a' }],
+  ['unsupported parameters', { scriptId: smoke.id, deviceProfileId: 'test-ipad', parameters: { unexpected: true }, assertionMode: 'pos' as const, expectedRevision: 'revision-a' }],
+  ['an unsupported assertion lane', { scriptId: smoke.id, deviceProfileId: 'test-ipad', parameters: {}, assertionMode: 'pos-shopify' as const, expectedRevision: 'revision-a' }],
+] as Array<[string, RunRequest]>;
+
+for (const [label, request] of invalidRequests) {
+  test(`rejects ${label} before a native worker can start`, () => {
+    assert.throws(() => validateRunRequestAgainstCatalog(request, [smoke], registry));
+  });
+}
 
 for (const [label, value] of [
   ['unsupported schema', { ...smoke, schemaVersion: 99 }],
