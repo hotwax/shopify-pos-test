@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.create-cash-order",
+  "name": "Create a cash order",
+  "description": "Create one bounded cash order in an approved Shopify POS test store using exact variant IDs and OMS read-back verification.",
+  "domain": "shopify-pos",
+  "scenario": "pos.create-cash-order",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos-shopify-oms",
+  "tags": ["mutation", "create-order", "cash", "test-store"]
+}

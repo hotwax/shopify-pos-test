@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.return-cash-order",
+  "name": "Return a cash order",
+  "description": "Return exact eligible lines from an approved cash-only Shopify POS test order with an explicit restock choice and read-back verification.",
+  "domain": "shopify-pos",
+  "scenario": "pos.return-cash-order",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos-shopify-oms",
+  "tags": ["mutation", "return", "cash", "test-store"]
+}

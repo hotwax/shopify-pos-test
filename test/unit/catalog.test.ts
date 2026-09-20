@@ -34,6 +34,12 @@ test('accepts a registered read-only catalog definition', () => {
   assert.equal(validateScript(orderActionsInspection, registry).effect, 'read-only');
   const returnSurfaceInspection = { ...smoke, id: 'pos.inspect-return-surface', name: 'Inspect return and exchange surface', scenario: 'pos.inspect-return-surface', description: 'Read-only return surface inspection', tags: ['diagnostic'] };
   assert.equal(validateScript(returnSurfaceInspection, registry).effect, 'read-only');
+  const createOrder = { ...smoke, id: 'pos.create-cash-order', name: 'Create a cash order', scenario: 'pos.create-cash-order', description: 'Gated cash order', assertionMode: 'pos-shopify-oms' as const, tags: ['mutation'] };
+  assert.equal(validateScript(createOrder, registry).effect, 'create-order');
+  const returnOrder = { ...smoke, id: 'pos.return-cash-order', name: 'Return a cash order', scenario: 'pos.return-cash-order', description: 'Gated cash return', assertionMode: 'pos-shopify-oms' as const, tags: ['mutation'] };
+  assert.equal(validateScript(returnOrder, registry).effect, 'return');
+  const exchangeOrder = { ...smoke, id: 'pos.exchange-cash-order', name: 'Exchange a cash order', scenario: 'pos.exchange-cash-order', description: 'Gated cash exchange', assertionMode: 'pos-shopify-oms' as const, tags: ['mutation'] };
+  assert.equal(validateScript(exchangeOrder, registry).effect, 'exchange');
 });
 
 test('accepts only run parameters owned by the selected catalog scenario', () => {
