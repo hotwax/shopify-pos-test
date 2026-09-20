@@ -13,6 +13,7 @@ import { acknowledgeCommitAttempt, acknowledgeCommitOutcome, clearCommitAttempt,
 import { clearBridgeRequest, readBridgeRequests, writeBridgeResponse } from './bridge.ts';
 import { writeWorkerInput } from './input.ts';
 import { RunBlockedError } from './guards.ts';
+import { remoteXpcTunnelBlockedMessage } from '../setup/checks.ts';
 
 export interface WorkerInput {
   runId: string;
@@ -71,7 +72,7 @@ export async function classifyWorkerFailure(artifactDir: string): Promise<Worker
     return {
       state: 'blocked',
       reason: 'remote-xpc-tunnel-unavailable',
-      message: 'The iOS RemoteXPC tunnel is not running. Start it from a separate Terminal with `sudo appium driver run xcuitest tunnel-creation`, then start a fresh native run. The toolkit did not change iPad access settings.',
+      message: remoteXpcTunnelBlockedMessage,
     };
   }
   return {

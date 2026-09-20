@@ -48,6 +48,8 @@ export interface DeviceLockState {
 
 export type RemoteXpcTunnelProbe = () => Promise<boolean>;
 
+export const remoteXpcTunnelBlockedMessage = 'The iOS RemoteXPC tunnel is not running. Start it from a separate Terminal with `sudo appium driver run xcuitest tunnel-creation`, then start a fresh native run. The toolkit did not change iPad access settings.';
+
 /**
  * Read-only check for Appium's RemoteXPC tunnel registry. The registry is a
  * host-side service; probing it never starts a tunnel, changes the iPad, or
@@ -67,6 +69,16 @@ export const probeRemoteXpcTunnel: RemoteXpcTunnelProbe = async () => {
     clearTimeout(timer);
   }
 };
+
+/** Read-only OS-version classification used to decide whether RemoteXPC is required. */
+export async function requiresRemoteXpc(udid: string, run: CommandRunner = command): Promise<boolean> {
+  const output = await run('xcrun', ['devicectl', 'device', 'info', 'details', '--device', udid, '--timeout', '15', '--json-output', '-', '--omit-deprecated-fields-in-json']);
+  const parsed = jsonResult(output);
+  const device = parsed.result ?? parsed;
+  const os = displayValue(deviceProperties(device).software.osVersionNumber);
+  const major = versionMajor(os);
+  return major !== null && major >= 18;
+}
 
 /** Read-only CoreDevice preflight. This command never unlocks or changes the iPad. */
 export async function readDeviceLockState(udid: string, run: CommandRunner = command): Promise<DeviceLockState> {

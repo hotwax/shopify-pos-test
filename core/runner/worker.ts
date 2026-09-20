@@ -7,7 +7,7 @@ import { registry } from '../../test/scenarios/registry.ts';
 import { readMutationReadiness } from '../safety/readiness.ts';
 import { assertScenarioCanRun, RunBlockedError } from './guards.ts';
 import { validateRunRequestAgainstCatalog } from '../catalog/validate.ts';
-import { readDeviceLockState } from '../setup/checks.ts';
+import { probeRemoteXpcTunnel, readDeviceLockState, remoteXpcTunnelBlockedMessage, requiresRemoteXpc } from '../setup/checks.ts';
 
 export function createWdioWorkerFactory(root: string): WorkerFactory {
   return async ({ runId, request, artifactDir, inputFile }) => {
@@ -23,6 +23,9 @@ export function createWdioWorkerFactory(root: string): WorkerFactory {
     const lockState = await readDeviceLockState(profile.udid);
     if (lockState.passcodeRequired) {
       throw new RunBlockedError('device-locked', 'CoreDevice reports that the iPad is locked. Unlock it yourself and leave Shopify POS on Home; the toolkit did not change iPad access settings.');
+    }
+    if (await requiresRemoteXpc(profile.udid) && !await probeRemoteXpcTunnel()) {
+      throw new RunBlockedError('remote-xpc-tunnel-unavailable', remoteXpcTunnelBlockedMessage);
     }
     const appiumPort = await findAvailablePort(4723);
     const wdaLocalPort = await findAvailablePort(8101);

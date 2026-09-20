@@ -9,7 +9,7 @@ import { readDeviceConfig } from '../config/device.ts';
 import { registry } from '../test/scenarios/registry.ts';
 import { readMutationReadiness } from '../core/safety/readiness.ts';
 import { assertScenarioCanRun, RunBlockedError } from '../core/runner/guards.ts';
-import { readDeviceLockState } from '../core/setup/checks.ts';
+import { probeRemoteXpcTunnel, readDeviceLockState, remoteXpcTunnelBlockedMessage, requiresRemoteXpc } from '../core/setup/checks.ts';
 import { validateRunRequestAgainstCatalog } from '../core/catalog/validate.ts';
 
 const root = resolve(import.meta.dirname, '..');
@@ -42,6 +42,9 @@ const coordinator = createCoordinator({
     const lockState = await readDeviceLockState(device.udid);
     if (lockState.passcodeRequired) {
       throw new RunBlockedError('device-locked', 'CoreDevice reports that the iPad is locked. Unlock it yourself and leave Shopify POS on Home; the toolkit did not change iPad access settings.');
+    }
+    if (await requiresRemoteXpc(device.udid) && !await probeRemoteXpcTunnel()) {
+      throw new RunBlockedError('remote-xpc-tunnel-unavailable', remoteXpcTunnelBlockedMessage);
     }
     const wdaDerivedDataPath = resolve(root, '.runtime', 'runs', runId, 'wda');
     const env = {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { listDevices, probeRemoteXpcTunnel, readDeviceLockState, runSetupChecks, type CommandRunner } from '../../core/setup/checks.ts';
+import { listDevices, probeRemoteXpcTunnel, readDeviceLockState, requiresRemoteXpc, runSetupChecks, type CommandRunner } from '../../core/setup/checks.ts';
 import type { DeviceProfile } from '../../shared/contracts.ts';
 
 const profile: DeviceProfile = {
@@ -52,6 +52,13 @@ test('accepts only a healthy local RemoteXPC tunnel registry response', async ()
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('requires RemoteXPC only for iOS 18 and later', async () => {
+  const detailsKey = `xcrun devicectl device info details --device ${profile.udid} --timeout 15 --json-output - --omit-deprecated-fields-in-json`;
+  assert.equal(await requiresRemoteXpc(profile.udid, runner({ [detailsKey]: pairedDevice })), true);
+  const legacy = JSON.stringify({ result: { deviceProperties: { osVersionNumber: '17.7' } } });
+  assert.equal(await requiresRemoteXpc(profile.udid, runner({ [detailsKey]: legacy })), false);
 });
 
 test('distinguishes full Xcode from command-line tools', async () => {
