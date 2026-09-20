@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    {
+      "testOnly": true,
+      "connectionId": "local-oms",
+      "omsOrigin": "https://approved-test-oms.example",
+      "userId": "reviewed-oms-user-id",
+      "connectorShopId": "reviewed-connector-shop-id",
+      "shopGid": "gid://shopify/Shop/reviewed-shop-id",
+      "shopDomain": "approved-test-store.myshopify.com",
+      "locationGid": "gid://shopify/Location/reviewed-location-id",
+      "apiVersion": "2026-01"
+    }
+  ]
+}

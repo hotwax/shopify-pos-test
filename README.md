@@ -98,6 +98,14 @@ the bearer token in memory until logout or restart; it does not persist the
 password or token. No arbitrary GraphQL text, Shopify mutation or POS
 transaction workflow is exposed yet.
 
+Mutation policy is deliberately separate from OMS login. A maintainer must
+create a local `config/test-environments.json` from
+`config/test-environments.example.json`, replace every placeholder with a
+reviewed test-store/shop/location identity, and keep `testOnly: true`. The
+policy contains no passwords or tokens and is not a substitute for proving the
+live POS shop/location identity; until that native proof and mutation-screen
+inspection are complete, the transaction UI remains blocked.
+
 ## Commands and safety
 
 ```sh
