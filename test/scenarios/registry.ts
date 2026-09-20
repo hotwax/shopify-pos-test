@@ -30,6 +30,20 @@ export const registry: ScenarioDescriptor[] = [
     supportedAssertionModes: ['pos'],
   },
   {
+    id: 'pos.inspect-product-search',
+    version: 1,
+    effect: 'read-only',
+    entry: 'test/specs/inspect-product-search.spec.ts',
+    parameterSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {},
+      required: [],
+    },
+    requiredCapabilities: ['pos-native-read'],
+    supportedAssertionModes: ['pos'],
+  },
+  {
     id: 'pos.open-first-order',
     version: 1,
     effect: 'read-only',

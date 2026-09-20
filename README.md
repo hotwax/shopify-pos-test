@@ -123,6 +123,7 @@ npm run doctor
 npm run test:orders
 npm run test:inspect
 npm run test:inspect-cart
+npm run test:inspect-product-search
 npm run test:script -- --id pos.open-first-order
 npm run dev
 ```
@@ -143,6 +144,12 @@ accessibility tree through WDA and saves `current-screen.xml` and
 `current-screen.png` under that run's local artifacts. It performs no tap,
 navigation, reset, alert dismissal or iPad-settings action, so it is the safe
 first command when documenting a new Shopify POS screen or version.
+
+`npm run test:inspect-product-search` is also read-only with respect to store
+data. It uses the observed Home search control, opens the product-search
+surface, verifies that exactly one native search field is visible, and saves
+the accessibility tree and screenshot. It does not type, select, add or price
+an item; return Shopify POS to Home yourself before another workflow.
 
 Only one iPad/worker is used. No app reset, reinstall, forced restart, automatic
 alert acceptance, whole-test retries, checkout, refunds or order modifications.

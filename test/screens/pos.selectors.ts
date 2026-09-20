@@ -5,6 +5,10 @@ export const cartScreen = '~Screen.Cart';
 export const checkoutButton = '~Screen.Cart.CheckoutButton';
 export const addCartButton = '~Screen.Cart.AddCartButton';
 export const searchBar = '~Component.SearchBar';
+// Observed only as a native type after opening the Home search button. The
+// diagnostic intentionally requires exactly one visible field instead of
+// guessing a version-specific accessibility identifier.
+export const productSearchField = '-ios predicate string:type == "XCUIElementTypeSearchField"';
 export const homeTab = '~Component.AppNavigation.BottomTabs.Home';
 export const ordersTab = '~Component.AppNavigation.BottomTabs.Orders';
 export const ordersScreen = '~Screen.OrdersScreen';

@@ -18,6 +18,7 @@
     "test:orders": "node --import tsx scripts/run-test.ts --id pos.open-first-order",
     "test:inspect": "node --import tsx scripts/run-test.ts --id pos.inspect-screen",
     "test:inspect-cart": "node --import tsx scripts/run-test.ts --id pos.inspect-cart",
+    "test:inspect-product-search": "node --import tsx scripts/run-test.ts --id pos.inspect-product-search",
     "test:script": "node --import tsx scripts/run-test.ts"
   },
   "devDependencies": {

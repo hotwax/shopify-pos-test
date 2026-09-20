@@ -28,6 +28,8 @@ test('accepts a registered read-only catalog definition', () => {
   assert.equal(validateScript(inspection, registry).effect, 'read-only');
   const cartInspection = { ...smoke, id: 'pos.inspect-cart', name: 'Inspect empty POS cart', scenario: 'pos.inspect-cart', description: 'Read-only cart inspection', tags: ['diagnostic'] };
   assert.equal(validateScript(cartInspection, registry).effect, 'read-only');
+  const productSearchInspection = { ...smoke, id: 'pos.inspect-product-search', name: 'Inspect product search', scenario: 'pos.inspect-product-search', description: 'Read-only product search inspection', tags: ['diagnostic'] };
+  assert.equal(validateScript(productSearchInspection, registry).effect, 'read-only');
 });
 
 test('accepts only run parameters owned by the selected catalog scenario', () => {

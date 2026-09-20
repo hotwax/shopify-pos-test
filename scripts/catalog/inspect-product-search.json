@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.inspect-product-search",
+  "name": "Inspect product search",
+  "description": "From Shopify POS Home, open the observed product search surface and capture its native accessibility tree without selecting or adding an item.",
+  "domain": "shopify-pos",
+  "scenario": "pos.inspect-product-search",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["diagnostic", "read-only", "product-search"]
+}
