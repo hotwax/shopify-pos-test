@@ -13,6 +13,7 @@ Updated: 2026-09-20.
 | OMS login | `test-maarg.hotwax.io`, BASIC login | Live contract observed; credentials remain runtime-only |
 | OMS profile/permissions | Profile and permissions routes returned HTTP 200 | Live contract observed |
 | OMS Shopify shops | Authenticated shop list returned two records | Live contract observed; field projection required |
+| OMS Shopify location mapping | First shop returned 24 OMS mapping rows, 20 Shopify locations and 15 matching IDs; no Shopify location was named `Commerce Next`. Second shop returned one mapping row, but its Shopify location GraphQL read returned HTTP 400 | Live read observed; POS sale-location identity remains unresolved and cannot be substituted |
 | OMS GraphQL facade | Named variant/order/location reads plus exact Shopify order-detail read returned connector envelope with `response`/`cost` for the working shop; the second configured shop returned HTTP 400 for all three named reads | Live read observed; no arbitrary GraphQL or mutation is exposed; the second shop remains unavailable for target mapping |
 | Shopify POS planning UI | Workflow chooser, OMS-scoped shop/location/variant/order reads and exact identity display | Implemented locally; selections never change POS state |
 | Missing/invalid OMS auth | Missing token 403; invalid/expired token 401 | Fail-closed behavior confirmed |

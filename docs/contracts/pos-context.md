@@ -51,13 +51,20 @@ reader and OMS shop/location mapping can be independently correlated.
 ## Live OMS cross-check
 
 On 2026-09-20, an ephemeral authenticated read against the configured test OMS
-listed two shops. The first shop exposed 25 variants, 25 orders and 20 named
-locations, but none was named `Commerce Next`, the sale-location label present
-in the captured POS Orders screen. The second shop returned HTTP 400 for each
-of the named variant, order and location reads. The session logged out and
-emitted no credentials or resource identifiers. This is evidence of an
-unresolved target mapping/connector-read issue, not permission to substitute a
-different location or to enable mutations.
+listed two shops. The read included both the OMS Shopify-location mapping
+endpoint and the reviewed Shopify location GraphQL read:
+
+- The first shop returned 24 OMS mapping rows and 20 Shopify locations. Fifteen
+  mapping IDs matched a Shopify location ID; none of the Shopify locations was
+  named `Commerce Next`, the sale-location label present in the captured POS
+  Orders screen.
+- The second shop returned one OMS mapping row, but its Shopify location
+  GraphQL read returned HTTP 400, so its location identity could not be
+  established.
+
+The session logged out and emitted no credentials or resource identifiers. This
+is evidence of an unresolved target mapping/connector-read issue, not
+permission to substitute a different location or to enable mutations.
 
 ## Mutation observations still required
 
