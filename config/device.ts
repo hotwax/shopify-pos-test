@@ -1,3 +1,5 @@
+import { assertNativeSessionPreservesAccess } from '../core/safety/native-session.ts';
+
 export interface DeviceConfig {
   udid: string;
   teamId: string;
@@ -18,7 +20,7 @@ export function readDeviceConfig(env: NodeJS.ProcessEnv): DeviceConfig {
 }
 
 export function buildCapabilities(config: DeviceConfig) {
-  return {
+  const capabilities = {
     platformName: 'iOS',
     'appium:automationName': 'XCUITest',
     'appium:udid': config.udid,
@@ -39,4 +41,6 @@ export function buildCapabilities(config: DeviceConfig) {
     'appium:newCommandTimeout': 120,
     'appium:settings': { snapshotMaxDepth: 62 },
   };
+  assertNativeSessionPreservesAccess(capabilities);
+  return capabilities;
 }

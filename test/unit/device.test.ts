@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readDeviceConfig, buildCapabilities } from '../../config/device.ts';
+import { assertNativeSessionPreservesAccess } from '../../core/safety/native-session.ts';
 
 const valid = {
   IOS_UDID: '00008103-0000000000000000',
@@ -39,9 +40,19 @@ test('preserves the installed app, session and alert decisions', () => {
   assert.equal(caps['appium:shouldTerminateApp'], false);
   assert.equal(caps['appium:autoAcceptAlerts'], false);
   assert.equal(caps['appium:autoDismissAlerts'], false);
+  assert.equal(caps['appium:useNewWDA'], false);
   assert.equal(caps['appium:xcodeOrgId'], 'ABCDE12345');
   assert.equal(caps['appium:updatedWDABundleId'], 'co.example.iosTesting.WDARunner');
   assert.equal('appium:app' in caps, false);
+});
+
+test('rejects capability changes that could reset POS or replace the WDA session', () => {
+  const caps = buildCapabilities(readDeviceConfig(valid)) as Record<string, unknown>;
+  for (const key of ['appium:fullReset', 'appium:forceAppLaunch', 'appium:shouldTerminateApp', 'appium:autoAcceptAlerts', 'appium:autoDismissAlerts', 'appium:useNewWDA']) {
+    assert.throws(() => assertNativeSessionPreservesAccess({ ...caps, [key]: true }), /safety invariant/);
+  }
+  assert.throws(() => assertNativeSessionPreservesAccess({ ...caps, 'appium:noReset': false }), /safety invariant/);
+  assert.throws(() => assertNativeSessionPreservesAccess({ ...caps, 'appium:app': '/tmp/unknown.app' }), /safety invariant/);
 });
 
 test('captures the deep native POS order hierarchy', () => {
