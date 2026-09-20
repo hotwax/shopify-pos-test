@@ -1,0 +1,96 @@
+# OMS read adapter contract
+
+Status: **observed against the configured test instance; credentials and
+business identifiers intentionally omitted**.
+
+Observed: 2026-09-20, `test-maarg.hotwax.io`, using the existing company-app
+local session configuration in memory. No credential, token, shop ID, order ID
+or customer data is stored in this document.
+
+## Authentication
+
+The test instance reports BASIC login through:
+
+```text
+GET  /rest/s1/admin/checkLoginOptions
+POST /rest/s1/admin/login
+GET  /rest/s1/admin/user/profile
+GET  /rest/s1/admin/user/permissions
+POST /rest/s1/admin/logout
+```
+
+Observed login request body:
+
+```json
+{"username":"<runtime value>","password":"<runtime value>"}
+```
+
+The successful response contained `token`, `api_key` and `expirationTime`.
+The adapter uses the returned bearer token in memory only. Passwords and tokens
+must never enter the browser, repository, process arguments, logs or exported
+run evidence. A sidecar restart clears the session.
+
+Observed authorization behavior for the shop-list route:
+
+| Request | Result |
+| --- | --- |
+| Missing bearer token | HTTP 403 with `errorCode`/`errors` |
+| Invalid/expired bearer token | HTTP 401 with `errorCode`/`errors` |
+| Authenticated user | HTTP 200 |
+
+The app must preserve these distinctions. Authentication and permission errors
+are not empty search results and are not retried as transient failures.
+
+## Shopify shop reads
+
+```text
+GET /rest/s1/sob/shopify/shops
+Authorization: Bearer <runtime token>
+```
+
+The configured user received an array of two shops. A shop record can contain
+the connector's shop ID, Shopify shop ID/domain/name, primary location,
+currency, timezone, plan name and related remote/configuration fields. The
+desktop adapter must project only the fields needed by the UI; it must not
+return connector credentials or raw remote configuration to the browser.
+
+## Shopify GraphQL reads
+
+```text
+POST /rest/s1/shopify/graphql
+Authorization: Bearer <runtime token>
+Content-Type: application/json
+```
+
+The tested request shape is:
+
+```json
+{
+  "shopId": "<resolved OMS shop ID>",
+  "queryText": "<compiled named read query>",
+  "variables": {}
+}
+```
+
+The live response contained `statusCode`, `cost` and `response`. The connector
+places Shopify data under `response`; the adapter must not assume a direct
+Shopify `{data: ...}` envelope.
+
+An invalid/non-approved shop identifier produced HTTP 400 with an error shape.
+This is a useful fail-closed signal, not proof of cross-user shop isolation.
+Task 5 must still verify that a valid shop belonging to another permitted
+context cannot be read by this session before enabling the data browser.
+
+## Adapter rules
+
+The browser can call only named operations such as `searchVariants`,
+`searchOrders`, `listLocations`, `resolveReference` and `verifyOrder`. It cannot
+submit arbitrary GraphQL text, a connector remote ID, or a user-selected URL.
+The sidecar resolves the selected OMS shop, validates the operation document,
+enforces read-only GraphQL AST rules, bounds pagination and normalizes the
+connector response.
+
+The effective Shopify API version for this instance remains unverified. The
+local connector source inspected during planning defaults to `2026-01`; the
+runtime must report the actual version or mark it unknown rather than silently
+assuming compatibility with current public documentation.
