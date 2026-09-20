@@ -2,6 +2,20 @@ import type { ScenarioDescriptor } from '../../shared/contracts.ts';
 
 export const registry: ScenarioDescriptor[] = [
   {
+    id: 'pos.inspect-screen',
+    version: 1,
+    effect: 'read-only',
+    entry: 'test/specs/inspect-screen.spec.ts',
+    parameterSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {},
+      required: [],
+    },
+    requiredCapabilities: ['pos-native-read'],
+    supportedAssertionModes: ['pos'],
+  },
+  {
     id: 'pos.open-first-order',
     version: 1,
     effect: 'read-only',

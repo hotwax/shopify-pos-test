@@ -17,7 +17,7 @@ Updated: 2026-09-20.
 | Missing/invalid OMS auth | Missing token 403; invalid/expired token 401 | Fail-closed behavior confirmed |
 | POS active shop/location identity | Not independently correlated | Mutation gate remains blocked |
 | Returns/exchanges | No completed mutation performed | Native mutation screens/selectors and real-device proof remain unavailable; GUI stays fail-closed |
-| Transaction policy | Explicit `testOnly` target loader, exact-ID validation, cash-only direction checks and durable commit checkpoint are unit-tested | Safety foundation exists; it is not evidence that a live target is approved |
+| Transaction policy | Explicit `testOnly` target loader, exact-ID validation, cash-only direction checks, durable approval checkpoint, coordinator acknowledgement before commit and confirmed/unknown effect states are unit-tested | Safety foundation exists; it is not evidence that a live target is approved |
 | POS Pro and staff permissions | Not fully characterized | Exchange capability gate remains open |
 
 ## Scope rules

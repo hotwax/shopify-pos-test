@@ -16,6 +16,7 @@
     "test:shell": "node --import tsx --test test/browser/*.spec.ts",
     "doctor": "tsx scripts/doctor.ts",
     "test:orders": "node --import tsx scripts/run-test.ts --id pos.open-first-order",
+    "test:inspect": "node --import tsx scripts/run-test.ts --id pos.inspect-screen",
     "test:script": "node --import tsx scripts/run-test.ts"
   },
   "devDependencies": {

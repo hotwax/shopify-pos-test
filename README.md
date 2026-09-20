@@ -115,6 +115,7 @@ npm run build
 npm run start
 npm run doctor
 npm run test:orders
+npm run test:inspect
 npm run test:script -- --id pos.open-first-order
 npm run dev
 ```
@@ -129,6 +130,12 @@ least one order in the current Orders list. It preserves filters/sort, opens the
 first actual order and checks its detail reference. It leaves that detail open;
 return POS to Home yourself before each rerun. It must fail for a wrong starting
 screen or empty list, not create business data to repair the precondition.
+
+`npm run test:inspect` is a read-only diagnostic. It reads the current native
+accessibility tree through WDA and saves `current-screen.xml` and
+`current-screen.png` under that run's local artifacts. It performs no tap,
+navigation, reset, alert dismissal or iPad-settings action, so it is the safe
+first command when documenting a new Shopify POS screen or version.
 
 Only one iPad/worker is used. No app reset, reinstall, forced restart, automatic
 alert acceptance, whole-test retries, checkout, refunds or order modifications.

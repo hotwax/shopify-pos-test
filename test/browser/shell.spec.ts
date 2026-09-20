@@ -19,7 +19,7 @@ test('built localhost shell serves the SPA and its catalog API', async () => {
     assert.equal(spaRoute.status, 200);
     assert.match(await spaRoute.text(), /<div id="app"><\/div>/);
 
-    for (const route of ['/setup', '/scripts/pos.open-first-order', '/connections', '/runs']) {
+    for (const route of ['/setup', '/scripts/pos.open-first-order', '/scripts/pos.inspect-screen', '/connections', '/runs']) {
       const page = await fetch(`${server.url}${route}`, { headers: { Host: `127.0.0.1:${server.port}` } });
       assert.equal(page.status, 200, route);
       assert.match(await page.text(), /<div id="app"><\/div>/, route);
@@ -29,7 +29,7 @@ test('built localhost shell serves the SPA and its catalog API', async () => {
       headers: { Host: `127.0.0.1:${server.port}`, 'X-Local-Session': server.sessionToken },
     });
     assert.equal(catalog.status, 200);
-    assert.equal((await catalog.json() as { scripts: unknown[] }).scripts.length, 1);
+    assert.equal((await catalog.json() as { scripts: unknown[] }).scripts.length, 2);
 
     const profiles = await fetch(`${server.url}/api/setup/profiles`, {
       headers: { Host: `127.0.0.1:${server.port}`, 'X-Local-Session': server.sessionToken },
