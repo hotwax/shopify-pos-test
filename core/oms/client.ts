@@ -1,7 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import type { Page } from '../../shared/contracts.ts';
 import { OmsSessionStore, type FetchLike } from './auth.ts';
 import { assertNamedReadQuery, listLocationsQuery, resolveOrderQuery, searchOrdersQuery, searchVariantsQuery, type NamedReadOperation } from './queries/documents.ts';
-import { OmsError, boundedCursor, boundedSearch, canonicalOrigin, type OmsConnectionConfig, type OmsConnectionSummary, type OmsLocation, type OmsOrder, type OmsOrderDetail, type OmsOrderItem, type OmsOrderRecord, type OmsService, type OmsShop, type OmsShopifyOrderAgreement, type OmsShopifyOrderAgreementSale, type OmsShopifyOrderDetail, type OmsShopifyOrderLine, type OmsShopifyOrderTransaction, type OmsVariant } from './types.ts';
+import { OmsError, boundedCursor, boundedSearch, canonicalOrigin, type OmsConnectionConfig, type OmsConnectionDraft, type OmsConnectionSummary, type OmsLocation, type OmsOrder, type OmsOrderDetail, type OmsOrderItem, type OmsOrderRecord, type OmsService, type OmsShop, type OmsShopifyOrderAgreement, type OmsShopifyOrderAgreementSale, type OmsShopifyOrderDetail, type OmsShopifyOrderLine, type OmsShopifyOrderTransaction, type OmsVariant } from './types.ts';
 
 function object(value: unknown): Record<string, any> {
   if (!value || typeof value !== 'object') throw new OmsError('invalid-data', 'The OMS returned an invalid JSON object.');
@@ -238,6 +239,17 @@ export class OmsClient implements OmsService {
     return [...this.connectionsById.values()].map(connection => ({ ...connection, ...this.sessions.status(connection.id) }));
   }
 
+  addConnection(draft: OmsConnectionDraft): OmsConnectionSummary {
+    const origin = canonicalOrigin(draft.origin);
+    const label = draft.label.trim() || new URL(origin).hostname;
+    if (label.length > 120) throw new OmsError('configuration', 'The OMS instance name is too long.');
+    const existing = [...this.connectionsById.values()].find(connection => connection.origin === origin);
+    if (existing) return { ...existing, ...this.sessions.status(existing.id) };
+    const connection: OmsConnectionConfig = { id: `oms-${randomUUID().replaceAll('-', '')}`, label, origin };
+    this.connectionsById.set(connection.id, connection);
+    return { ...connection, state: 'configured' };
+  }
+
   async login(connectionId: string, credentials: { username: string; password: string }): Promise<OmsConnectionSummary> {
     const connection = this.connection(connectionId);
     const session = await this.sessions.login(connection, credentials);
@@ -245,6 +257,17 @@ export class OmsClient implements OmsService {
   }
 
   async logout(connectionId: string): Promise<void> { await this.sessions.logout(this.connection(connectionId)); }
+
+  async health(connectionId: string): Promise<OmsConnectionSummary> {
+    const connection = this.connection(connectionId);
+    try {
+      await this.get(connectionId, '/rest/s1/admin/user/profile');
+    } catch (error) {
+      if (error instanceof OmsError && error.code === 'authentication') this.sessions.clear(connectionId);
+      throw error;
+    }
+    return { ...connection, ...this.sessions.status(connectionId) };
+  }
 
   private async get(connectionId: string, path: string): Promise<unknown> {
     const connection = this.connection(connectionId);

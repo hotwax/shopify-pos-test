@@ -2,23 +2,48 @@
   <ion-page>
     <ion-header><ion-toolbar><ion-title>OMS connections</ion-title></ion-toolbar></ion-header>
     <ion-content class="ion-padding">
-      <h1>Connect an OMS</h1>
-      <p>Use the approved HTTPS origin configured in this Mac's local <code>.env</code>. Credentials are sent only to the localhost sidecar and the OMS login endpoint; they are cleared from this page after login and are never stored by this app.</p>
+      <h1>OMS data connection</h1>
+      <p>Connect to a test OMS instance from this page. Credentials are sent only to the localhost sidecar and the OMS login endpoint; they are cleared after login and are never stored by this app.</p>
       <ion-text color="danger" v-if="error"><p role="alert">{{ error }}</p></ion-text>
 
-      <ion-card v-for="connection in connections" :key="connection.id">
-        <ion-card-header><ion-card-title>{{ connection.label }}</ion-card-title></ion-card-header>
+      <ion-card v-if="activeConnection?.state === 'connected'">
+        <ion-card-header><ion-card-title>Connection health</ion-card-title></ion-card-header>
         <ion-card-content>
-          <p><strong>Origin:</strong> {{ connection.origin }}</p>
-          <p><strong>Status:</strong> {{ connection.state }}<span v-if="connection.userId"> · {{ connection.userId }}</span></p>
-          <ion-item><ion-label position="stacked">Username</ion-label><ion-input v-model="username" autocomplete="username" /></ion-item>
-          <ion-item><ion-label position="stacked">Password</ion-label><ion-input v-model="password" type="password" autocomplete="current-password" /></ion-item>
-          <ion-button @click="login(connection.id)" :disabled="busy || !username || !password">{{ busy ? 'Connecting…' : 'Log in for read-only data' }}</ion-button>
-          <ion-button fill="clear" color="medium" @click="logout(connection.id)" v-if="connection.state === 'connected'">Log out</ion-button>
-          <ion-button fill="outline" @click="loadShops(connection.id)" v-if="connection.state === 'connected'">Refresh shops</ion-button>
+          <p><strong>Instance:</strong> {{ activeConnection.label }}<br><strong>Origin:</strong> {{ activeConnection.origin }}<br><strong>Status:</strong> Connected<span v-if="activeConnection.userId"> · {{ activeConnection.userId }}</span></p>
+          <p v-if="activeConnection.expiresAt"><strong>Session expires:</strong> {{ formatDate(activeConnection.expiresAt) }}</p>
+          <ion-note v-if="healthCheckedAt"><p>Last health check: {{ formatDate(healthCheckedAt) }}</p></ion-note>
+          <ion-button fill="outline" @click="refreshHealth" :disabled="healthLoading">{{ healthLoading ? 'Checking…' : 'Refresh health' }}</ion-button>
+          <ion-button fill="clear" color="medium" @click="logout(activeConnectionId)">Log out and switch OMS</ion-button>
         </ion-card-content>
       </ion-card>
-      <ion-card v-if="!connections.length && !loading"><ion-card-content>No OMS connection is configured. Add <code>OMS_ORIGIN=https://...</code> to <code>.env</code>, restart <code>./run.sh</code>, and return here.</ion-card-content></ion-card>
+
+      <ion-card v-else>
+        <ion-card-header><ion-card-title>Log in to a test OMS</ion-card-title></ion-card-header>
+        <ion-card-content>
+          <ion-item><ion-label position="stacked">HotWax instance name</ion-label><ion-input v-model="instanceName" autocomplete="organization" placeholder="test-maarg" /></ion-item>
+          <p v-if="connectionOrigin"><strong>Will connect to:</strong> {{ connectionOrigin }}</p>
+          <ion-item><ion-label position="stacked">Username</ion-label><ion-input v-model="username" autocomplete="username" /></ion-item>
+          <ion-item><ion-label position="stacked">Password</ion-label><ion-input v-model="password" type="password" autocomplete="current-password" /></ion-item>
+          <ion-button @click="connect" :disabled="busy || !connectionOrigin || !username.trim() || !password">{{ busy ? 'Connecting…' : 'Log in for read-only data' }}</ion-button>
+          <p><ion-note>The instance name is used to derive its HTTPS URL and is saved locally as a recent connection after a successful login. Your username, password, bearer token and OMS data are not saved in browser storage.</ion-note></p>
+        </ion-card-content>
+      </ion-card>
+
+      <ion-card v-if="activeConnection?.state !== 'connected' && recentConnections.length">
+        <ion-card-header><ion-card-title>Recent OMS instances</ion-card-title></ion-card-header>
+        <ion-card-content>
+          <ion-list>
+            <ion-item v-for="recent in recentConnections" :key="recent.origin" button detail="false" @click="selectRecent(recent)">
+              <ion-label><strong>{{ recent.label }}</strong><p>{{ recent.origin }}</p></ion-label>
+              <ion-button slot="end" fill="outline" @click.stop="selectRecent(recent)">Use</ion-button>
+            </ion-item>
+          </ion-list>
+        </ion-card-content>
+      </ion-card>
+
+      <ion-card v-if="connections.some(connection => connection.state === 'configured' || connection.state === 'expired') && activeConnection?.state !== 'connected'">
+        <ion-card-content><ion-note>Existing local connection records are available in this process. Enter the instance URL above to log in; the sidecar keeps the session only in memory.</ion-note></ion-card-content>
+      </ion-card>
 
       <ion-card v-if="shops.length">
         <ion-card-header><ion-card-title>Shop scope</ion-card-title></ion-card-header>
@@ -139,7 +164,9 @@
 import { computed, onMounted, ref } from 'vue';
 import { IonBadge, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardTitle, IonCol, IonContent, IonGrid, IonHeader, IonInput, IonItem, IonLabel, IonList, IonNote, IonPage, IonRow, IonSelect, IonSelectOption, IonText, IonTitle, IonToolbar } from '@ionic/vue';
 import type { OmsConnectionSummary, OmsLocation, OmsOrder, OmsOrderDetail, OmsOrderRecord, OmsShop, OmsShopifyOrderDetail, OmsVariant } from '../../shared/contracts.ts';
-import { getOmsConnections, getOmsOrderDetail, getOmsShops, getOmsShopifyOrderDetail, listOmsLocations, loginOms, logoutOms, searchOmsOrderRecords as searchOmsOrderRecordsRequest, searchOmsOrders, searchOmsVariants } from '../api.ts';
+import { addOmsConnection, getOmsConnections, getOmsHealth, getOmsOrderDetail, getOmsShops, getOmsShopifyOrderDetail, listOmsLocations, loginOms, logoutOms, searchOmsOrderRecords as searchOmsOrderRecordsRequest, searchOmsOrders, searchOmsVariants } from '../api.ts';
+import { readRecentOmsConnections, rememberRecentOmsConnection, type RecentOmsConnection } from '../oms-recents.ts';
+import { buildOmsOrigin, instanceNameFromOrigin } from '../oms-origin.ts';
 
 const connections = ref<OmsConnectionSummary[]>([]);
 const shops = ref<OmsShop[]>([]);
@@ -158,9 +185,11 @@ const orderCursor = ref<string | null>(null);
 const locationCursor = ref<string | null>(null);
 const omsOrderCursor = ref<string | null>(null);
 const activeConnectionId = ref(''); const shopId = ref(''); const username = ref(''); const password = ref('');
+const instanceName = ref(''); const recentConnections = ref<RecentOmsConnection[]>([]);
+const connectionOrigin = computed(() => { try { return buildOmsOrigin(instanceName.value); } catch { return ''; } });
 const variantSearch = ref(''); const orderSearch = ref(''); const omsOrderSearch = ref(''); const loading = ref(true); const busy = ref(false); const error = ref('');
 const variantLoading = ref(false); const orderLoading = ref(false); const locationLoading = ref(false); const omsOrderLoading = ref(false); const omsDetailLoading = ref(false); const shopifyDetailLoading = ref(false);
-const shopifyDetailError = ref('');
+const shopifyDetailError = ref(''); const healthLoading = ref(false); const healthCheckedAt = ref('');
 let variantRequest = 0; let orderRequest = 0; let locationRequest = 0; let omsOrderRequest = 0; let omsDetailRequest = 0; let shopifyDetailRequest = 0;
 const activeConnection = computed(() => connections.value.find(connection => connection.id === activeConnectionId.value));
 const selectedShop = computed(() => shops.value.find(shop => shop.connectorShopId === shopId.value));
@@ -189,9 +218,42 @@ function selectShopifyOrder(item: OmsOrder | undefined): void {
   selectedShopifyDetail.value = undefined;
 }
 
-async function refreshConnections() { loading.value = true; error.value = ''; try { connections.value = (await getOmsConnections()).connections; if (!activeConnectionId.value && connections.value[0]) activeConnectionId.value = connections.value[0].id; } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Could not read OMS configuration.'; } finally { loading.value = false; } }
-async function login(id: string) { busy.value = true; error.value = ''; try { await loginOms(id, username.value, password.value); username.value = ''; password.value = ''; await refreshConnections(); await loadShops(id); } catch (cause) { password.value = ''; error.value = cause instanceof Error ? cause.message : 'OMS login failed.'; } finally { busy.value = false; } }
-async function logout(id: string) { busy.value = true; error.value = ''; try { await logoutOms(id); shops.value = []; shopId.value = ''; clearShopData(); clearOmsData(); await refreshConnections(); } catch (cause) { error.value = cause instanceof Error ? cause.message : 'OMS logout failed.'; } finally { busy.value = false; } }
+async function refreshConnections() { loading.value = true; error.value = ''; try { connections.value = (await getOmsConnections()).connections; const connected = connections.value.find(connection => connection.state === 'connected'); if (!activeConnectionId.value || !connections.value.some(connection => connection.id === activeConnectionId.value)) activeConnectionId.value = connected?.id ?? ''; } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Could not read OMS connections.'; } finally { loading.value = false; } }
+function formatDate(value: string): string { const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleString() : 'Unknown'; }
+function selectRecent(recent: RecentOmsConnection): void { instanceName.value = instanceNameFromOrigin(recent.origin) || recent.label; username.value = ''; password.value = ''; }
+async function connect() {
+  busy.value = true; error.value = '';
+  try {
+    const normalizedInstanceName = instanceNameFromOrigin(connectionOrigin.value);
+    if (!normalizedInstanceName) throw new Error('Enter a valid HotWax instance name.');
+    const added = await addOmsConnection(normalizedInstanceName, connectionOrigin.value);
+    const loggedIn = await loginOms(added.connection.id, username.value, password.value);
+    rememberRecentOmsConnection({ label: loggedIn.connection.label, origin: loggedIn.connection.origin });
+    recentConnections.value = readRecentOmsConnections();
+    instanceName.value = instanceNameFromOrigin(loggedIn.connection.origin) || loggedIn.connection.label;
+    username.value = ''; password.value = '';
+    activeConnectionId.value = loggedIn.connection.id;
+    await refreshConnections();
+    await loadShops(loggedIn.connection.id);
+  } catch (cause) {
+    password.value = '';
+    error.value = cause instanceof Error ? cause.message : 'OMS login failed.';
+  } finally { busy.value = false; }
+}
+async function logout(id: string) { busy.value = true; error.value = ''; try { await logoutOms(id); shops.value = []; shopId.value = ''; clearShopData(); clearOmsData(); healthCheckedAt.value = ''; activeConnectionId.value = ''; await refreshConnections(); } catch (cause) { error.value = cause instanceof Error ? cause.message : 'OMS logout failed.'; } finally { busy.value = false; } }
+async function refreshHealth() {
+  if (!activeConnectionId.value || healthLoading.value) return;
+  healthLoading.value = true; error.value = '';
+  try {
+    const result = await getOmsHealth(activeConnectionId.value);
+    const index = connections.value.findIndex(connection => connection.id === result.connection.id);
+    if (index >= 0) connections.value[index] = result.connection;
+    healthCheckedAt.value = new Date().toISOString();
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'OMS health check failed.';
+    await refreshConnections();
+  } finally { healthLoading.value = false; }
+}
 async function loadShops(id: string) { busy.value = true; error.value = ''; clearShopData(); try { activeConnectionId.value = id; shops.value = (await getOmsShops(id)).shops; shopId.value = shops.value[0]?.connectorShopId ?? ''; } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Could not load OMS shops.'; } finally { busy.value = false; } }
 function shopChanged(): void { clearShopData(); }
 async function searchVariants(append = false) { if (!shopId.value || variantLoading.value) return; const request = ++variantRequest; variantLoading.value = true; error.value = ''; try { const result = await searchOmsVariants({ connectionId: activeConnectionId.value, shopId: shopId.value, search: variantSearch.value, cursor: append ? variantCursor.value ?? undefined : undefined }); if (request !== variantRequest) return; variants.value = append ? [...variants.value, ...result.items] : result.items; variantCursor.value = result.nextCursor; if (!append) selectedVariant.value = undefined; } catch (cause) { if (request === variantRequest) error.value = cause instanceof Error ? cause.message : 'Variant search failed.'; } finally { if (request === variantRequest) variantLoading.value = false; } }
@@ -216,5 +278,5 @@ async function loadShopifyOrderDetail(append = false) {
 async function searchOmsOrderRecords(append = false) { if (!activeConnectionId.value || omsOrderLoading.value) return; const request = ++omsOrderRequest; omsOrderLoading.value = true; error.value = ''; try { const result = await searchOmsOrderRecordsRequest({ connectionId: activeConnectionId.value, search: omsOrderSearch.value, cursor: append ? omsOrderCursor.value ?? undefined : undefined }); if (request !== omsOrderRequest) return; omsOrders.value = append ? [...omsOrders.value, ...result.items] : result.items; omsOrderCursor.value = result.nextCursor; if (!append) { selectedOmsOrder.value = undefined; selectedOmsDetail.value = undefined; } } catch (cause) { if (request === omsOrderRequest) error.value = cause instanceof Error ? cause.message : 'OMS order search failed.'; } finally { if (request === omsOrderRequest) omsOrderLoading.value = false; } }
 async function loadOmsOrderDetail(item: OmsOrderRecord) { const request = ++omsDetailRequest; selectedOmsOrder.value = item; selectedOmsDetail.value = undefined; omsDetailLoading.value = true; error.value = ''; try { const result = await getOmsOrderDetail(activeConnectionId.value, item.orderId); if (request !== omsDetailRequest) return; selectedOmsDetail.value = result.order; } catch (cause) { if (request === omsDetailRequest) error.value = cause instanceof Error ? cause.message : 'OMS order detail failed.'; } finally { if (request === omsDetailRequest) omsDetailLoading.value = false; } }
 async function loadLocations(append = false) { if (!shopId.value || locationLoading.value) return; const request = ++locationRequest; locationLoading.value = true; error.value = ''; try { const result = await listOmsLocations({ connectionId: activeConnectionId.value, shopId: shopId.value, cursor: append ? locationCursor.value ?? undefined : undefined }); if (request !== locationRequest) return; locations.value = append ? [...locations.value, ...result.items] : result.items; locationCursor.value = result.nextCursor; if (!append) selectedLocation.value = undefined; } catch (cause) { if (request === locationRequest) error.value = cause instanceof Error ? cause.message : 'Location read failed.'; } finally { if (request === locationRequest) locationLoading.value = false; } }
-onMounted(refreshConnections);
+onMounted(() => { recentConnections.value = readRecentOmsConnections(); void refreshConnections(); });
 </script>

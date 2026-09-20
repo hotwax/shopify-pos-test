@@ -2,7 +2,7 @@ import { canonicalOrigin, type OmsConnectionConfig } from './types.ts';
 
 export function configuredOmsConnections(env: NodeJS.ProcessEnv = process.env): { connections: OmsConnectionConfig[]; errors: string[] } {
   const rawOrigin = env.OMS_ORIGIN?.trim();
-  if (!rawOrigin) return { connections: [], errors: ['Set OMS_ORIGIN in the local .env before connecting an OMS.'] };
+  if (!rawOrigin) return { connections: [], errors: [] };
   try {
     return {
       connections: [{

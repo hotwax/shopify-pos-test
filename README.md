@@ -80,8 +80,11 @@ the supported workflow.
 4. Run `npm ci`. Copy `.env.example` to `.env` and fill in the physical iPad
    UDID, Xcode team ID, and your own unique reverse-domain WDA bundle ID.
    `xcrun devicectl list devices` lists the devices. Never use `auto`.
-   For the optional read-only OMS data browser, also set `OMS_ORIGIN` to the
-   approved HTTPS origin and restart the local app after changing `.env`.
+   OMS is configured from the **Connections** page in the running app: enter a
+   HotWax instance name (for example `test-maarg`) and your credentials. The
+   app derives `https://test-maarg.hotwax.io` for you. `OMS_ORIGIN` in `.env`
+   is optional and only preloads one backwards-compatible local connection;
+   it is not required for teammates.
 5. Run `npm run doctor`. It reads host/device/signing state; it does not change
    settings, create certificates or install apps. A pass is a prerequisite
    check, not proof that WDA is provisioned or that POS automation works.
@@ -101,7 +104,9 @@ export keys, passwords, profiles or Shopify credentials into this project. The
 OMS page supports the verified BASIC login mode and named, read-only shop,
 variant, Shopify order/location, and OMS order/detail reads. The sidecar keeps
 the bearer token in memory until logout or restart; it does not persist the
-password or token. No arbitrary GraphQL text, Shopify mutation or POS
+password or token. The page stores only recently used OMS names and HTTPS
+origins in browser local storage so a teammate can return to an instance
+without retyping its URL. No arbitrary GraphQL text, Shopify mutation or POS
 transaction workflow is exposed yet.
 
 Mutation policy is deliberately separate from OMS login. A maintainer must

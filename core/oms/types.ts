@@ -6,6 +6,11 @@ export interface OmsConnectionConfig {
   origin: string;
 }
 
+export interface OmsConnectionDraft {
+  label: string;
+  origin: string;
+}
+
 export interface OmsConnectionSummary extends OmsConnectionConfig {
   state: 'configured' | 'connected' | 'expired' | 'error';
   userId?: string;
@@ -133,6 +138,8 @@ export interface OmsLocation {
 
 export interface OmsService {
   connections(): OmsConnectionSummary[];
+  addConnection?(draft: OmsConnectionDraft): OmsConnectionSummary;
+  health?(connectionId: string): Promise<OmsConnectionSummary>;
   login(connectionId: string, credentials: { username: string; password: string }): Promise<OmsConnectionSummary>;
   logout(connectionId: string): Promise<void>;
   shops(connectionId: string): Promise<OmsShop[]>;

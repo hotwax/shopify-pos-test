@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { createApiServer } from '../../server/app.ts';
+import { OmsClient } from '../../core/oms/client.ts';
 import { createCoordinator } from '../../core/runner/coordinator.ts';
 import type { OmsService } from '../../core/oms/types.ts';
 
@@ -81,10 +82,45 @@ test('exposes setup profiles and empty run history through the authenticated loc
   });
 });
 
+test('lets the UI add an HTTPS OMS instance without an OMS environment variable', async () => {
+  const oms = new OmsClient([]);
+  const server = await createApiServer({ port: 0, mode: 'test', root: process.cwd(), oms });
+  try {
+    const port = new URL(server.url).port;
+    const headers = { Host: `127.0.0.1:${port}`, 'X-Local-Session': server.sessionToken, 'Content-Type': 'application/json' };
+    const add = await fetch(`${server.url}/api/oms/connections`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ label: 'Test Maarg', origin: 'https://test-maarg.hotwax.io/' }),
+    });
+    assert.equal(add.status, 201);
+    const added = await add.json() as { connection: { id: string; label: string; origin: string; state: string } };
+    assert.match(added.connection.id, /^[a-zA-Z0-9_-]+$/);
+    assert.equal(added.connection.label, 'Test Maarg');
+    assert.equal(added.connection.origin, 'https://test-maarg.hotwax.io');
+    assert.equal(added.connection.state, 'configured');
+    assert.doesNotMatch(JSON.stringify(added), /password|token/i);
+
+    const listed = await fetch(`${server.url}/api/oms/connections`, { headers });
+    assert.equal(listed.status, 200);
+    assert.deepEqual((await listed.json() as { connections: { origin: string }[] }).connections.map(item => item.origin), ['https://test-maarg.hotwax.io']);
+
+    const unsafe = await fetch(`${server.url}/api/oms/connections`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ label: 'Unsafe', origin: 'http://test-maarg.hotwax.io' }),
+    });
+    assert.equal(unsafe.status, 400);
+  } finally {
+    await server.close();
+  }
+});
+
 test('keeps OMS credentials on the localhost sidecar and exposes only named reads', async () => {
   let receivedPassword = '';
   const oms: OmsService = {
     connections: () => [{ id: 'local', label: 'Test OMS', origin: 'https://oms.example', state: 'configured' }],
+    health: async () => ({ id: 'local', label: 'Test OMS', origin: 'https://oms.example', state: 'connected', userId: 'user-1' }),
     login: async (_id, credentials) => { receivedPassword = credentials.password; return { id: 'local', label: 'Test OMS', origin: 'https://oms.example', state: 'connected', userId: 'user-1' }; },
     logout: async () => undefined,
     shops: async () => [{ connectorShopId: 'shop-1', shopGid: 'gid://shopify/Shop/1', shopDomain: 'test.myshopify.com', name: 'Test', locationGid: null, currency: 'USD', timezone: 'UTC' }],
@@ -103,6 +139,10 @@ test('keeps OMS credentials on the localhost sidecar and exposes only named read
     assert.equal(login.status, 200);
     assert.equal(receivedPassword, 'sidecar-only');
     assert.doesNotMatch(await login.text(), /sidecar-only/);
+
+    const health = await fetch(`${server.url}/api/oms/health?connectionId=local`, { headers });
+    assert.equal(health.status, 200);
+    assert.deepEqual(await health.json(), { connection: { id: 'local', label: 'Test OMS', origin: 'https://oms.example', state: 'connected', userId: 'user-1' } });
 
     const shops = await fetch(`${server.url}/api/oms/shops?connectionId=local`, { headers });
     assert.equal(shops.status, 200);

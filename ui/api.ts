@@ -83,6 +83,16 @@ export async function getOmsConnections(): Promise<{ connections: OmsConnectionS
   return request('/api/oms/connections');
 }
 
+export async function addOmsConnection(label: string, origin: string): Promise<{ connection: OmsConnectionSummary }> {
+  if (!sessionToken) await getHealth();
+  return request('/api/oms/connections', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label, origin }) });
+}
+
+export async function getOmsHealth(connectionId: string): Promise<{ connection: OmsConnectionSummary }> {
+  if (!sessionToken) await getHealth();
+  return request(`/api/oms/health?connectionId=${encodeURIComponent(connectionId)}`);
+}
+
 export async function loginOms(connectionId: string, username: string, password: string): Promise<{ connection: OmsConnectionSummary }> {
   if (!sessionToken) await getHealth();
   return request('/api/oms/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ connectionId, username, password }) });

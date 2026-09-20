@@ -4,7 +4,7 @@ import { loadCatalog } from '../core/catalog/load.ts';
 import { listDevices, runSetupChecks } from '../core/setup/checks.ts';
 import { loadDeviceProfiles, saveDeviceProfile } from '../core/storage/profiles.ts';
 import { createRunStorage } from '../core/storage/runs.ts';
-import { OmsError, type OmsService } from '../core/oms/types.ts';
+import { OmsError, canonicalOrigin, type OmsService } from '../core/oms/types.ts';
 import type { DeviceProfile, RunRequest } from '../shared/contracts.ts';
 import type { RunCoordinator } from '../core/runner/coordinator.ts';
 import { createLocalSession, sessionMatches, type LaunchMode } from './session.ts';
@@ -99,6 +99,12 @@ function boundedText(value: unknown, max: number): value is string {
 
 function validConnectionId(value: unknown): value is string { return boundedText(value, 80) && /^[a-zA-Z0-9_-]+$/.test(value); }
 
+function validConnectionDraft(value: unknown): value is { label: string; origin: string } {
+  if (!value || typeof value !== 'object') return false;
+  const body = value as Record<string, unknown>;
+  return boundedText(body.label, 120) && boundedText(body.origin, 256) && !!body.label.trim() && !!body.origin.trim();
+}
+
 function validShopRead(value: unknown): value is { connectionId: string; shopId: string; search?: string; cursor?: string } {
   if (!value || typeof value !== 'object') return false;
   const body = value as Record<string, unknown>;
@@ -168,10 +174,28 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
         return;
       }
       if (url.pathname.startsWith('/api/oms/')) {
-        if (!options.oms) { sendJson(response, 503, { ok: false, error: 'No OMS connection is configured. Set OMS_ORIGIN in .env.' }); return; }
+        if (!options.oms) { sendJson(response, 503, { ok: false, error: 'The local OMS sidecar is unavailable.' }); return; }
         try {
           if (request.method === 'GET' && url.pathname === '/api/oms/connections') {
             sendJson(response, 200, { connections: options.oms.connections() });
+            return;
+          }
+          if (request.method === 'POST' && url.pathname === '/api/oms/connections') {
+            const body = await readBody(request);
+            if (!validConnectionDraft(body) || !options.oms.addConnection) {
+              sendJson(response, 400, { ok: false, error: 'A named HTTPS OMS origin is required.' });
+              return;
+            }
+            let origin: string;
+            try { origin = canonicalOrigin(body.origin); }
+            catch (error) { sendJson(response, 400, { ok: false, error: error instanceof OmsError ? error.message : 'The OMS origin is invalid.' }); return; }
+            sendJson(response, 201, { connection: options.oms.addConnection({ label: body.label.trim(), origin }) });
+            return;
+          }
+          if (request.method === 'GET' && url.pathname === '/api/oms/health') {
+            const connectionId = url.searchParams.get('connectionId');
+            if (!validConnectionId(connectionId) || !options.oms.health) { sendJson(response, 400, { ok: false, error: 'A valid OMS connection is required.' }); return; }
+            sendJson(response, 200, { connection: await options.oms.health(connectionId) });
             return;
           }
           if (request.method === 'POST' && url.pathname === '/api/oms/login') {

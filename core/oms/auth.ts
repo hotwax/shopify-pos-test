@@ -86,6 +86,10 @@ export class OmsSessionStore {
     return { state: 'connected', userId: session.userId, expiresAt: session.expiresAt };
   }
 
+  clear(connectionId: string): void {
+    this.sessions.delete(connectionId);
+  }
+
   token(connectionId: string): string {
     const session = this.sessions.get(connectionId);
     if (!session || Date.parse(session.expiresAt) <= Date.now()) {

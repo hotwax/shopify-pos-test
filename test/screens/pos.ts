@@ -13,6 +13,30 @@ async function requireNoAlert(): Promise<void> {
   }
 }
 
+export type PosCartState = {
+  cartDisplayed: boolean;
+  checkoutExists: boolean;
+  checkoutDisplayed: boolean;
+  checkoutEnabled: boolean;
+  checkoutHittable: string | null;
+  addCartExists: boolean;
+  addCartDisplayed: boolean;
+  addCartEnabled: boolean;
+  addCartHittable: string | null;
+  empty: boolean;
+};
+
+async function readNativeState(element: WebdriverIO.Element): Promise<{ exists: boolean; displayed: boolean; enabled: boolean; hittable: string | null }> {
+  const exists = await element.isExisting();
+  if (!exists) return { exists: false, displayed: false, enabled: false, hittable: null };
+  return {
+    exists: true,
+    displayed: await element.isDisplayed(),
+    enabled: await element.isEnabled(),
+    hittable: await element.getAttribute('hittable'),
+  };
+}
+
 export const pos = {
   async assertHome(): Promise<void> {
     await requireNoAlert();
@@ -23,14 +47,35 @@ export const pos = {
     await requireTouchable(home, 'POS Home is blocked; dismiss the overlay yourself.');
   },
 
-  async assertEmptyCart(): Promise<void> {
+  async readCartState(): Promise<PosCartState> {
     await requireNoAlert();
-    const cart = await browser.$(s.cartScreen);
-    if (!await cart.isDisplayed()) throw new Error('The POS cart surface is not visible; inspect the current Home layout before testing.');
-    const checkout = await cart.$(s.checkoutButton);
-    if (!await checkout.isDisplayed() || await checkout.isEnabled()) throw new Error('The POS cart is not empty or its checkout state is not the observed empty-cart state.');
-    const clearCart = await cart.$(s.addCartButton);
-    if (await clearCart.isDisplayed() && await clearCart.isEnabled()) throw new Error('The POS cart exposes an enabled clear-cart action; do not change it automatically.');
+    const cart = await browser.$(s.cartScreen).getElement();
+    const checkout = await cart.$(s.checkoutButton).getElement();
+    const addCart = await cart.$(s.addCartButton).getElement();
+    const cartState = await readNativeState(cart);
+    const checkoutState = await readNativeState(checkout);
+    const addCartState = await readNativeState(addCart);
+    return {
+      cartDisplayed: cartState.displayed,
+      checkoutExists: checkoutState.exists,
+      checkoutDisplayed: checkoutState.displayed,
+      checkoutEnabled: checkoutState.enabled,
+      checkoutHittable: checkoutState.hittable,
+      addCartExists: addCartState.exists,
+      addCartDisplayed: addCartState.displayed,
+      addCartEnabled: addCartState.enabled,
+      addCartHittable: addCartState.hittable,
+      empty: cartState.displayed && checkoutState.exists && checkoutState.displayed && !checkoutState.enabled &&
+        !(addCartState.displayed && addCartState.enabled),
+    };
+  },
+
+  async assertEmptyCart(): Promise<void> {
+    const state = await this.readCartState();
+    if (!state.cartDisplayed) throw new Error('The POS cart surface is not visible; inspect the current Home layout before testing.');
+    if (!state.empty) {
+      throw new Error(`The POS cart is not in the observed empty-cart state (checkoutExists=${state.checkoutExists}, checkoutDisplayed=${state.checkoutDisplayed}, checkoutEnabled=${state.checkoutEnabled}, addCartExists=${state.addCartExists}, addCartDisplayed=${state.addCartDisplayed}, addCartEnabled=${state.addCartEnabled}).`);
+    }
   },
 
   async openOrders(): Promise<void> {
