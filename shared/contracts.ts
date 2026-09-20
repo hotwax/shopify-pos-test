@@ -93,6 +93,7 @@ export interface RunRecord {
   resourceIds: Record<string, string[]>;
   assertions: { lane: 'pos' | 'shopify' | 'oms'; status: string; message: string }[];
   pendingApproval?: PendingApproval;
+  businessEffectIntentHash?: string;
 }
 
 export interface PendingApproval {

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { classifyWorkerFailure, createCoordinator } from '../../core/runner/coordinator.ts';
 import { requestApproval } from '../../core/runner/approval.ts';
+import { consumeCommitAcknowledgement, consumeCommitOutcomeAcknowledgement, requestCommitAttempt, requestCommitOutcome } from '../../core/runner/effects.ts';
 import { spawn } from '../../core/runner/process.ts';
 import { isTerminalState } from '../../core/runner/protocol.ts';
 import type { RunRequest } from '../../shared/contracts.ts';
@@ -126,7 +127,7 @@ test('surfaces a worker approval request and resumes only after the coordinator 
     workerFactory: async ({ runId, artifactDir }) => {
       await requestApproval(root, runId, intentHash, { scenario: 'create-cash-order', direction: 'collect', amount: { amount: '12.00', currency: 'USD' }, lineCount: 1 });
       await writeFile(join(artifactDir, 'result.json'), JSON.stringify({ passed: true, message: 'approved' }));
-      return spawn(process.execPath, ['-e', 'setTimeout(() => {}, 2_000)'], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? '' } });
+      return spawn(process.execPath, ['-e', 'setTimeout(() => {}, 500)'], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? '' } });
     },
   });
   const accepted = await coordinator.startRun(request);
@@ -138,4 +139,43 @@ test('surfaces a worker approval request and resumes only after the coordinator 
   const finished = await coordinator.getRun(accepted.id);
   assert.equal(finished.pendingApproval, undefined);
   assert.equal(finished.effect, 'not-started');
+});
+
+test('does not report a passed run when a commit attempt lacks confirmed read-back', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-'));
+  const intentHash = 'd'.repeat(64);
+  const coordinator = createCoordinator({
+    root,
+    workerFactory: async ({ runId, artifactDir }) => {
+      await requestCommitAttempt(root, runId, intentHash);
+      await writeFile(join(artifactDir, 'result.json'), JSON.stringify({ passed: true, message: 'worker exited without a confirmation event' }));
+      return spawn(process.execPath, ['-e', 'setTimeout(() => {}, 500)'], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? '' } });
+    },
+  });
+  const accepted = await coordinator.startRun(request);
+  await eventually(async () => (await coordinator.getRun(accepted.id)).state === 'needs-reconciliation');
+  const result = await coordinator.getRun(accepted.id);
+  assert.equal(result.effect, 'unknown');
+  assert.equal(result.state, 'needs-reconciliation');
+});
+
+test('records a confirmed business effect only after the worker reports verified read-back', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-'));
+  const intentHash = 'e'.repeat(64);
+  const coordinator = createCoordinator({
+    root,
+    workerFactory: async ({ runId, artifactDir }) => {
+      await requestCommitAttempt(root, runId, intentHash);
+      await eventually(async () => consumeCommitAcknowledgement(root, runId, intentHash));
+      await requestCommitOutcome(root, runId, intentHash, 'confirmed');
+      await eventually(async () => consumeCommitOutcomeAcknowledgement(root, runId, intentHash, 'confirmed'));
+      await writeFile(join(artifactDir, 'result.json'), JSON.stringify({ passed: true, message: 'verified' }));
+      return spawn(process.execPath, ['-e', 'setTimeout(() => {}, 50)'], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? '' } });
+    },
+  });
+  const accepted = await coordinator.startRun(request);
+  await eventually(async () => (await coordinator.getRun(accepted.id)).state === 'passed');
+  const result = await coordinator.getRun(accepted.id);
+  assert.equal(result.effect, 'confirmed');
+  assert.equal(result.businessEffectIntentHash, intentHash);
 });

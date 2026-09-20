@@ -60,3 +60,14 @@ test('persists a pending approval request and clears it only after approval is g
   assert.equal(resumed.state, 'running');
   assert.equal(resumed.pendingApproval, undefined);
 });
+
+test('binds business-effect transitions to the approved intent hash', () => {
+  const initial = createInitialRunRecord('run-test', request, 'revision-a', '2026-09-20T00:00:00.000Z');
+  const hash = 'c'.repeat(64);
+  const attempted = applyRunEvent(initial, event(1, 'business-effect', { effect: 'attempted', intentHash: hash }));
+  assert.equal(attempted.effect, 'attempted');
+  assert.equal(attempted.businessEffectIntentHash, hash);
+  assert.throws(() => applyRunEvent(attempted, event(2, 'business-effect', { effect: 'confirmed', intentHash: 'd'.repeat(64) })), /intent hash/);
+  const confirmed = applyRunEvent(attempted, event(2, 'business-effect', { effect: 'confirmed', intentHash: hash }));
+  assert.equal(confirmed.effect, 'confirmed');
+});

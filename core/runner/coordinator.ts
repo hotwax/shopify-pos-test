@@ -9,6 +9,7 @@ import { acquireDeviceRunLock, type DeviceRunLock } from './lock.ts';
 import { isTerminalState, applyRunEvent, createInitialRunRecord } from './protocol.ts';
 import type { OwnedProcess } from './process.ts';
 import { approveCheckpoint as writeApproval, clearApprovalRequest, readApprovalRequest, type ApprovalRequest } from './approval.ts';
+import { acknowledgeCommitAttempt, acknowledgeCommitOutcome, clearCommitAttempt, clearCommitOutcome, readCommitAttempt, readCommitOutcome, type CommitAttemptRequest, type CommitOutcomeRequest } from './effects.ts';
 
 export interface WorkerInput {
   runId: string;
@@ -88,6 +89,28 @@ function approvalEvent(record: RunRecord, request: ApprovalRequest): RunEvent {
     at: new Date().toISOString(),
     type: 'approval-required',
     data: { intentHash: request.intentHash, requestedAt: request.requestedAt, summary: request.summary },
+  };
+}
+
+function businessEffectEvent(record: RunRecord, request: CommitAttemptRequest): RunEvent {
+  return {
+    protocolVersion: 1,
+    runId: record.id,
+    sequence: record.lastSequence + 1,
+    at: new Date().toISOString(),
+    type: 'business-effect',
+    data: { effect: 'attempted', intentHash: request.intentHash },
+  };
+}
+
+function businessOutcomeEvent(record: RunRecord, request: CommitOutcomeRequest): RunEvent {
+  return {
+    protocolVersion: 1,
+    runId: record.id,
+    sequence: record.lastSequence + 1,
+    at: new Date().toISOString(),
+    type: 'business-effect',
+    data: { effect: request.effect, intentHash: request.intentHash },
   };
 }
 
@@ -197,19 +220,42 @@ export class RunCoordinator {
   private async launch(record: RunRecord, active: ActiveRun): Promise<void> {
     const running = await this.append(record, stateEvent(record, 'running'));
     let polling = false;
-    const pollApproval = async () => {
+    const pollRequests = async () => {
       if (polling) return;
       polling = true;
       try {
         const requested = await readApprovalRequest(this.root, running.id);
-        if (!requested) return;
-        const current = await this.read(running.id);
-        if (isTerminalState(current.state) || current.pendingApproval?.intentHash === requested.intentHash) return;
-        await this.append(current, approvalEvent(current, requested));
-        await clearApprovalRequest(this.root, running.id);
+        if (requested) {
+          const current = await this.read(running.id);
+          if (!isTerminalState(current.state) && current.pendingApproval?.intentHash !== requested.intentHash) {
+            await this.append(current, approvalEvent(current, requested));
+            await clearApprovalRequest(this.root, running.id);
+          }
+        }
+        const commit = await readCommitAttempt(this.root, running.id);
+        if (commit) {
+          const current = await this.read(running.id);
+          if (!isTerminalState(current.state) && current.effect === 'not-started') {
+            await this.append(current, businessEffectEvent(current, commit));
+          }
+          const after = await this.read(running.id);
+          if (after.businessEffectIntentHash === commit.intentHash) {
+            await acknowledgeCommitAttempt(this.root, running.id, commit.intentHash);
+            await clearCommitAttempt(this.root, running.id);
+          }
+        }
+        const outcome = await readCommitOutcome(this.root, running.id);
+        if (outcome) {
+          const current = await this.read(running.id);
+          if (current.businessEffectIntentHash === outcome.intentHash && (current.effect === 'attempted' || current.effect === outcome.effect)) {
+            if (current.effect === 'attempted') await this.append(current, businessOutcomeEvent(current, outcome));
+            await acknowledgeCommitOutcome(this.root, running.id, outcome.intentHash, outcome.effect);
+            await clearCommitOutcome(this.root, running.id);
+          }
+        }
       } finally { polling = false; }
     };
-    const approvalTimer = setInterval(() => { void pollApproval(); }, 100);
+    const approvalTimer = setInterval(() => { void pollRequests().catch(() => undefined); }, 100);
     try {
       active.process = await this.workerFactory!(
         { runId: running.id, request: running.request, artifactDir: active.artifactDir },
@@ -228,6 +274,22 @@ export class RunCoordinator {
     if (!result || typeof result.passed !== 'boolean') {
       const classification = await classifyWorkerFailure(active.artifactDir);
       await this.append(current, stateEvent(current, classification.state, { reason: classification.reason, message: classification.message }));
+    } else if (current.effect === 'attempted') {
+      const intentHash = current.businessEffectIntentHash;
+      const unknown = intentHash
+        ? await this.append(current, {
+          protocolVersion: 1,
+          runId: current.id,
+          sequence: current.lastSequence + 1,
+          at: new Date().toISOString(),
+          type: 'business-effect',
+          data: { effect: 'unknown', intentHash },
+        })
+        : current;
+      await this.append(unknown, stateEvent(unknown, 'needs-reconciliation', {
+        reason: 'business-effect-not-confirmed',
+        message: 'The worker reached a commit boundary but did not provide confirmed read-back. Reconcile the test-store result before retrying.',
+      }));
     } else {
       await this.append(current, stateEvent(current, result.passed ? 'passed' : 'failed', { message: result.message ?? 'Structured worker result received.' }));
     }

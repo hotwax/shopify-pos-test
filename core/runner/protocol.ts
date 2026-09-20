@@ -110,7 +110,10 @@ export function applyRunEvent(record: RunRecord, input: RunEvent): RunRecord {
       next.state = state as RunRecord['state'];
     }
   } else if (event.type === 'business-effect') {
+    if (!/^[a-f0-9]{64}$/.test(String(event.data.intentHash))) throw new Error('Invalid business effect intent hash.');
     next.effect = transitionEffect(next.effect, event.data.effect);
+    if (next.businessEffectIntentHash && next.businessEffectIntentHash !== event.data.intentHash) throw new Error('Business-effect intent hash cannot change.');
+    next.businessEffectIntentHash = String(event.data.intentHash);
     if (next.effect === 'unknown') next.state = 'needs-reconciliation';
   } else if (event.type === 'assertion') {
     const lane = event.data.lane;

@@ -7,6 +7,7 @@ import { approveCheckpoint, consumeApproval } from '../../core/runner/approval.t
 import { consumeCommitCheckpoint, writeCommitCheckpoint } from '../../core/runner/checkpoint.ts';
 import { readResources, recordResource } from '../../core/runner/resources.ts';
 import { createScenarioContext } from '../../test/support/context.ts';
+import { acknowledgeCommitAttempt, acknowledgeCommitOutcome } from '../../core/runner/effects.ts';
 import type { TransactionIntent } from '../../shared/transaction.ts';
 
 test('approval checkpoints are exact and one-use', async () => {
@@ -48,7 +49,10 @@ test('owned scenario context consumes the exact approval before recording a comm
   await approveCheckpoint(root, 'run-1', hash);
   const context = createScenarioContext({ root, runId: 'run-1', approvalTimeoutMs: 20 });
   assert.deepEqual(await context.requireApproval(intent), { intentHash: hash });
+  await acknowledgeCommitAttempt(root, 'run-1', hash);
   await context.recordCommitAttempt(hash);
+  await acknowledgeCommitOutcome(root, 'run-1', hash, 'confirmed');
+  await context.recordBusinessEffect('confirmed', hash);
   assert.equal(await consumeCommitCheckpoint(root, 'run-1', hash), true);
   await assert.rejects(() => context.requireApproval(intent), /approval/i);
 });
