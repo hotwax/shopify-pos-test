@@ -128,8 +128,13 @@ capture failure never replaces the original test failure.
 - POS's deep native tree requires snapshotMaxDepth 62 (the supported maximum);
   the default 50 truncated the actual order rows. A no-match search exposed
   the loading/empty UI; the search was cleared after inspection.
-- `npm run test:orders` passed on the physical iPad. The selected first row's
-  reference matched the independently scoped order detail title.
+- `npm run test:orders` passed twice on the physical iPad (20.3s and 21.8s
+  scenario durations). The selected first row's reference matched the
+  independently scoped order detail title; the final run left it open.
+- A separate live read-only safety check passed: rejected an order-detail
+  starting screen, deliberately mismatched detail reference and a no-results
+  search. Search was cleared and Home restored before the final normal run.
+  Failure capture produced both local PNG and XML during the negative checks.
 - Current live dataset: two rows, English UI, landscape iPad layout. Long-list
   scrolling, other languages/layouts and other empty-state variants are not
   live-verified. Unsupported structures fail instead of guessing taps.

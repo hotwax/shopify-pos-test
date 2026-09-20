@@ -1,6 +1,6 @@
 # iosTesting: Shopify POS orders smoke test
 
-Status: design approved by Aditya; implementation planning in progress.
+Status: implemented and verified on the real iPad; see README for results and limits.
 
 ## Goal
 
