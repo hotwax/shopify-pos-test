@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { readDeviceConfig } from '../config/device.ts';
 import { runSetupChecks } from '../core/setup/checks.ts';
 

@@ -94,3 +94,14 @@ The effective Shopify API version for this instance remains unverified. The
 local connector source inspected during planning defaults to `2026-01`; the
 runtime must report the actual version or mark it unknown rather than silently
 assuming compatibility with current public documentation.
+
+## Live read verification
+
+On 2026-09-20, the adapter authenticated against `https://test-maarg.hotwax.io`
+using the company app's local runtime credentials in one ephemeral process.
+The password and bearer token were not printed, stored or copied into this
+repository. The process returned two Shopify shops, 20 locations, 25 variants
+and 25 orders from the selected shop; the variant and order reads reported
+additional pages. The process logged out before exit. This proves the verified
+BASIC login and named read envelope for this account, not mutation permission
+or POS shop/location identity.

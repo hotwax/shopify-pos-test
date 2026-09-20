@@ -22,6 +22,14 @@ const pairedDevice = JSON.stringify({ result: {
   connectionProperties: { pairingState: 'paired' },
   deviceProperties: { developerModeStatus: 'enabled', osVersionNumber: '27.0' },
 } });
+const currentPairedDevice = JSON.stringify({ result: {
+  properties: {
+    hardware: { udid: profile.udid, deviceType: 'iPad', marketingName: 'iPad Pro' },
+    connection: { pairingState: 'paired' },
+    software: { osVersionNumber: { stringValue: '27.0' } },
+    state: { developerModeStatus: { enabled: true } },
+  },
+} });
 const posApps = JSON.stringify({ result: { apps: [{ bundleIdentifier: 'com.jadedpixel.pos', version: '11.14.0', bundleVersion: '505086' }] } });
 
 test('distinguishes full Xcode from command-line tools', async () => {
@@ -80,4 +88,17 @@ test('parses device discovery without exposing process output beyond safe identi
     ] } }),
   }));
   assert.deepEqual(devices, [{ udid: profile.udid, name: 'iPad Pro', model: 'iPad', os: '27.0' }]);
+});
+
+test('parses the current CoreDevice properties shape without changing device settings', async () => {
+  const checks = await runSetupChecks(profile, runner({
+    'xcode-select -p': '/Applications/Xcode.app/Contents/Developer',
+    'xcodebuild -version': 'Xcode 27.0\nBuild version 27A266a',
+    [`xcrun devicectl device info details --device ${profile.udid} --timeout 15 --json-output - --omit-deprecated-fields-in-json`]: currentPairedDevice,
+    [`xcrun devicectl device info apps --device ${profile.udid} --include-default-apps --bundle-id com.jadedpixel.pos --timeout 15 --json-output - --omit-deprecated-fields-in-json`]: posApps,
+    'security find-identity -v -p codesigning': '1) ABCDE Apple Development: Test',
+  }));
+  assert.equal(checks.find(check => check.id === 'device.pairing')?.state, 'ready');
+  assert.equal(checks.find(check => check.id === 'device.developer')?.state, 'ready');
+  assert.equal(checks.find(check => check.id === 'device.os')?.state, 'ready');
 });

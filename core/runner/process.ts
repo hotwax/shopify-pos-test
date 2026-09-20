@@ -1,5 +1,6 @@
 import { spawn as spawnProcess, type ChildProcess } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { createServer as createNetServer } from 'node:net';
 import { isAbsolute, join } from 'node:path';
 import { browser } from '@wdio/globals';
 import type { DeviceProfile } from '../../shared/contracts.ts';
@@ -10,6 +11,25 @@ export interface OwnedProcess {
   child: ChildProcess;
   isAlive(): boolean;
   terminate(timeoutMs?: number): Promise<void>;
+}
+
+export async function findAvailablePort(preferred: number): Promise<number> {
+  if (!Number.isInteger(preferred) || preferred < 0 || preferred > 65_535) throw new Error('Invalid preferred local port.');
+  return new Promise<number>((resolve, reject) => {
+    const server = createNetServer();
+    const onError = (error: NodeJS.ErrnoException) => {
+      server.close();
+      if (error.code === 'EADDRINUSE' && preferred !== 0) {
+        void findAvailablePort(0).then(resolve, reject);
+      } else reject(error);
+    };
+    server.once('error', onError);
+    server.listen(preferred, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      server.close(error => error ? reject(error) : resolve(port));
+    });
+  });
 }
 
 function assertSafeExecutable(executable: string): void {
@@ -66,7 +86,7 @@ export function spawn(executable: string, args: string[], options: { cwd: string
   };
 }
 
-export function makeWorkerEnvironment(device: DeviceProfile, runId: string, artifactDir: string, port: number, wdaDerivedDataPath: string): Record<string, string> {
+export function makeWorkerEnvironment(device: DeviceProfile, runId: string, artifactDir: string, port: number, wdaLocalPort: number, wdaDerivedDataPath: string): Record<string, string> {
   if (!isAbsolute(artifactDir)) throw new Error('Artifact directory must be absolute.');
   if (!isAbsolute(wdaDerivedDataPath)) throw new Error('WDA DerivedData path must be absolute.');
   return {
@@ -78,11 +98,12 @@ export function makeWorkerEnvironment(device: DeviceProfile, runId: string, arti
     WDIO_RUN_ID: runId,
     RUN_ARTIFACT_DIR: artifactDir,
     APPIUM_PORT: String(port),
+    WDA_LOCAL_PORT: String(wdaLocalPort),
     WDA_DERIVED_DATA_PATH: wdaDerivedDataPath,
   };
 }
 
-export function makeWdioConfig(input: { runId: string; device: DeviceProfile; entry: string; artifactDir: string; port: number; wdaDerivedDataPath: string }): WebdriverIO.Config {
+export function makeWdioConfig(input: { runId: string; device: DeviceProfile; entry: string; artifactDir: string; port: number; wdaLocalPort: number; wdaDerivedDataPath: string }): WebdriverIO.Config {
   const capabilities = buildCapabilities({
     udid: input.device.udid,
     teamId: input.device.teamId,
@@ -95,7 +116,7 @@ export function makeWdioConfig(input: { runId: string; device: DeviceProfile; en
     path: '/',
     specs: [input.entry],
     maxInstances: 1,
-    capabilities: [{ ...capabilities, 'appium:derivedDataPath': input.wdaDerivedDataPath }],
+    capabilities: [{ ...capabilities, 'appium:derivedDataPath': input.wdaDerivedDataPath, 'appium:wdaLocalPort': input.wdaLocalPort }],
     framework: 'mocha',
     mochaOpts: { timeout: 120_000 },
     waitforTimeout: 20_000,

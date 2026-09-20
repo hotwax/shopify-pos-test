@@ -141,6 +141,9 @@ port 4723 first; WebdriverIO starts and stops its own local server.
   the required Apple setting/trust action yourself, then start a fresh run. The
   toolkit reports this as a blocked prerequisite; it does not toggle the
   setting or attempt to repair access.
+- **Xcode says “Unlock iPad to Continue”:** unlock the iPad yourself and leave
+  it awake on Shopify POS Home, then start a fresh run. The toolkit does not
+  enter a passcode, wake the device, or alter its security/automation state.
 - **Signing/profile expiry:** renew WDA provisioning through Xcode using your
   own account; no Shopify binary or signing certificate is needed.
 

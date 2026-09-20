@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import dotenv from 'dotenv';
 import { loadCatalog } from '../core/catalog/load.ts';
 import { createCoordinator } from '../core/runner/coordinator.ts';
-import { makeWorkerEnvironment, spawn } from '../core/runner/process.ts';
+import { findAvailablePort, makeWorkerEnvironment, spawn } from '../core/runner/process.ts';
 import { isTerminalState } from '../core/runner/protocol.ts';
 import { readDeviceConfig } from '../config/device.ts';
 import { registry } from '../test/scenarios/registry.ts';
@@ -20,12 +20,14 @@ if (!script) throw new Error(`Catalog script is unavailable: ${scriptId}`);
 const scenario = registry.find(candidate => candidate.id === script.scenario);
 if (!scenario) throw new Error(`Scenario is unavailable: ${script.scenario}`);
 const device = readDeviceConfig(process.env);
+const appiumPort = await findAvailablePort(4723);
+const wdaLocalPort = await findAvailablePort(8101);
 const revision = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const coordinator = createCoordinator({
   root,
   workerFactory: async ({ runId, request, artifactDir }) => {
     const env = {
-      ...makeWorkerEnvironment({ id: request.deviceProfileId, ...device }, runId, artifactDir, 4723, resolve(root, '.wda/DerivedData')),
+      ...makeWorkerEnvironment({ id: request.deviceProfileId, ...device }, runId, artifactDir, appiumPort, wdaLocalPort, resolve(root, '.wda/DerivedData')),
       WDIO_ENTRY: scenario.entry,
     };
     return spawn(resolve(root, 'node_modules/@wdio/cli/bin/wdio.js'), ['run', resolve(root, 'wdio.conf.ts')], { cwd: root, env });

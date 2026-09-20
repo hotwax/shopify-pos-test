@@ -18,12 +18,21 @@ function jsonResult(value: string): Record<string, any> {
   return JSON.parse(value) as Record<string, any>;
 }
 
+function displayValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value && typeof value === 'object' && 'stringValue' in value) return String((value as { stringValue?: unknown }).stringValue ?? '');
+  return '';
+}
+
 function deviceProperties(device: Record<string, any>): { hardware: Record<string, any>; connection: Record<string, any>; software: Record<string, any> } {
   const properties = device.properties ?? {};
+  const state = device.state ?? properties.state ?? {};
+  const software = device.deviceProperties ?? properties.deviceProperties ?? properties.software ?? {};
   return {
     hardware: device.hardwareProperties ?? properties.hardwareProperties ?? properties.hardware ?? {},
     connection: device.connectionProperties ?? properties.connectionProperties ?? properties.connection ?? {},
-    software: device.deviceProperties ?? properties.deviceProperties ?? properties.software ?? {},
+    software: { ...software, developerModeStatus: software.developerModeStatus ?? state.developerModeStatus },
   };
 }
 
@@ -44,7 +53,7 @@ export async function listDevices(run: CommandRunner = command): Promise<{ udid:
       udid: String(hardware.udid ?? device.identifier ?? ''),
       name: String(hardware.marketingName ?? properties.name ?? device.name ?? 'Unknown iPad'),
       model: String(hardware.deviceType ?? properties.platform ?? 'Unknown'),
-      os: String(software.osVersionNumber ?? properties.osVersionNumber ?? 'Unknown'),
+      os: displayValue(software.osVersionNumber ?? properties.osVersionNumber) || 'Unknown',
     };
   }).filter((device: { udid: string; model: string }) => device.udid && device.model.toLowerCase().includes('ipad'));
 }
@@ -78,9 +87,12 @@ export async function runSetupChecks(profile: DeviceProfile, run: CommandRunner 
     const properties = deviceProperties(device);
     const pairingReady = properties.connection.pairingState === 'paired';
     checks.push(check('device.pairing', pairingReady ? 'ready' : 'action', pairingReady ? 'The iPad is paired with this Mac.' : 'The iPad is not paired and trusted with this Mac.', pairingReady ? [] : ['Unlock the iPad and trust this Mac.']));
-    const developerReady = String(properties.software.developerModeStatus).toLowerCase() === 'enabled';
+    const developerStatus = properties.software.developerModeStatus;
+    const developerReady = developerStatus && typeof developerStatus === 'object'
+      ? Boolean((developerStatus as { enabled?: unknown }).enabled)
+      : String(developerStatus).toLowerCase() === 'enabled' || String(developerStatus).toLowerCase() === 'true';
     checks.push(check('device.developer', developerReady ? 'ready' : 'action', developerReady ? 'Developer Mode is enabled.' : 'Developer Mode is not enabled.', developerReady ? [] : ['Enable Developer Mode on the iPad yourself, then restart it if Apple requests.']));
-    const os = String(properties.software.osVersionNumber ?? '');
+    const os = displayValue(properties.software.osVersionNumber);
     const major = versionMajor(os);
     const osReady = major !== null && major >= 17 && major <= 27;
     checks.push(check('device.os', osReady ? 'ready' : 'unsupported', osReady ? `iPadOS ${os} is in the supported baseline.` : `iPadOS ${os || 'unknown'} is outside the supported baseline.`, osReady ? [] : ['Use a supported iPadOS version or update the compatibility matrix.']));
