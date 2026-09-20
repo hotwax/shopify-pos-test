@@ -101,3 +101,18 @@ test('accepts a structured worker result and exposes events to subscribers', asy
   assert.ok(states.includes('running'));
   assert.equal((await coordinator.getRun(accepted.id)).state, 'passed');
 });
+
+test('blocks a run when the reviewed source revision is no longer current', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-'));
+  let workerStarted = false;
+  const coordinator = createCoordinator({
+    root,
+    currentRevision: () => 'revision-current',
+    workerFactory: async () => { workerStarted = true; throw new Error('worker must not start'); },
+  });
+  const result = await coordinator.startRun({ ...request, expectedRevision: 'revision-reviewed' });
+  assert.equal(result.state, 'blocked');
+  assert.equal(result.effect, 'not-started');
+  assert.equal(workerStarted, false);
+  assert.match(result.statusMessage ?? '', /revision/i);
+});

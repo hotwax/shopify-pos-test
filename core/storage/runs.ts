@@ -2,6 +2,7 @@ import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile, open } fro
 import { join, resolve } from 'node:path';
 import type { RunEvent, RunRecord } from '../../shared/contracts.ts';
 import { applyRunEvent, createInitialRunRecord } from '../runner/protocol.ts';
+import { readResources } from '../runner/resources.ts';
 
 function runDirectory(root: string, runId: string): string {
   if (!/^[a-zA-Z0-9_-]{1,100}$/.test(runId)) throw new Error('Invalid run ID.');
@@ -82,9 +83,13 @@ export function createRunStorage(root: string): RunStorage {
       let summary: RunRecord | undefined;
       try { summary = JSON.parse(await readFile(join(directory, 'summary.json'), 'utf8')) as RunRecord; }
       catch { /* reconstruct from request and journal */ }
-      if (invalid) return needsReconciliation(summary ?? replay);
-      if (summary && summary.lastSequence > replay.lastSequence) return needsReconciliation(summary);
-      return replay;
+      const durableResources = await readResources(root, runId);
+      const resourceIds = { ...(summary?.resourceIds ?? replay.resourceIds) };
+      for (const [kind, ids] of Object.entries(durableResources)) resourceIds[kind] = [...new Set([...(resourceIds[kind] ?? []), ...ids])];
+      const hydrated = { ...replay, resourceIds };
+      if (invalid) return needsReconciliation({ ...(summary ?? hydrated), resourceIds });
+      if (summary && summary.lastSequence > replay.lastSequence) return needsReconciliation({ ...summary, resourceIds });
+      return hydrated;
     },
     async list() {
       const directory = join(resolve(root), '.runtime', 'runs');

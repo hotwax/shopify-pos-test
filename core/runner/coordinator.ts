@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { RunEvent, RunRecord, RunRequest } from '../../shared/contracts.ts';
@@ -82,12 +83,14 @@ export interface CoordinatorOptions {
   root: string;
   storage?: RunStorage;
   workerFactory?: WorkerFactory;
+  currentRevision?: () => string | undefined;
 }
 
 export class RunCoordinator {
   private readonly root: string;
   private readonly storage: RunStorage;
   private readonly workerFactory?: WorkerFactory;
+  private readonly currentRevision: () => string | undefined;
   private readonly active = new Map<string, ActiveRun>();
   private readonly listeners = new Map<string, Set<(event: RunEvent) => void>>();
   private readonly appendTails = new Map<string, Promise<RunRecord>>();
@@ -96,12 +99,23 @@ export class RunCoordinator {
     this.root = resolve(options.root);
     this.storage = options.storage ?? createRunStorage(this.root);
     this.workerFactory = options.workerFactory;
+    this.currentRevision = options.currentRevision ?? (() => {
+      try { return execFileSync('git', ['-C', this.root, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || undefined; }
+      catch { return undefined; }
+    });
   }
 
   async startRun(request: RunRequest): Promise<RunRecord> {
     const id = `run-${Date.now()}-${randomUUID().slice(0, 8)}`;
     const initial = createInitialRunRecord(id, request, request.expectedRevision);
     await this.storage.create(initial);
+    const currentRevision = this.currentRevision();
+    if (currentRevision && currentRevision !== request.expectedRevision) {
+      return this.append(initial, stateEvent(initial, 'blocked', {
+        reason: 'source-revision-changed',
+        message: 'The workspace changed after this run was reviewed. Refresh the script and approve the current revision before running.',
+      }));
+    }
     const lock = await acquireDeviceRunLock(this.root, request.deviceProfileId, id);
     if (!lock.acquired) {
       const blocked = await this.append(initial, stateEvent(initial, 'blocked', { reason: 'device-is-already-running', owner: lock.owner }));

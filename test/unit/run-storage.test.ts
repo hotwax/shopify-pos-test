@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { createRunStorage } from '../../core/storage/runs.ts';
+import { recordResource } from '../../core/runner/resources.ts';
 import { createInitialRunRecord } from '../../core/runner/protocol.ts';
 import type { RunRequest } from '../../shared/contracts.ts';
 
@@ -54,4 +55,14 @@ test('marks a run for reconciliation when a journal record is missing after a su
   const loaded = await storage.get('run-three');
   assert.equal(loaded.state, 'needs-reconciliation');
   assert.equal(loaded.effect, 'unknown');
+});
+
+test('hydrates durable affected resources into the run summary', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-runs-'));
+  const storage = createRunStorage(root);
+  const initial = createInitialRunRecord('run-resources', request, 'source');
+  await storage.create(initial);
+  await recordResource(root, 'run-resources', 'order', 'gid://shopify/Order/1');
+  const loaded = await storage.get('run-resources');
+  assert.deepEqual(loaded.resourceIds, { order: ['gid://shopify/Order/1'] });
 });
