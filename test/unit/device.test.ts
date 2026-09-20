@@ -43,3 +43,8 @@ test('preserves the installed app, session and alert decisions', () => {
   assert.equal(caps['appium:updatedWDABundleId'], 'co.example.iosTesting.WDARunner');
   assert.equal('appium:app' in caps, false);
 });
+
+test('captures the deep native POS order hierarchy', () => {
+  const caps: Record<string, unknown> = buildCapabilities(readDeviceConfig(valid));
+  assert.deepEqual(caps['appium:settings'], { snapshotMaxDepth: 62 });
+});

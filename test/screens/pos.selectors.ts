@@ -3,6 +3,7 @@
 export const homeScreen = '~Screen.Home';
 export const homeTab = '~Component.AppNavigation.BottomTabs.Home';
 export const ordersTab = '~Component.AppNavigation.BottomTabs.Orders';
+export const ordersScreen = '~Screen.OrdersScreen';
 export const ordersList = '~Screen.OrdersList';
 export const orderRows = '-ios predicate string:type == "XCUIElementTypeButton" AND name BEGINSWITH "Component.OrdersList.Order."';
 // OrdersList also contains a horizontal filter scroll view. Select the one

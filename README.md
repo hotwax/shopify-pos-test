@@ -4,10 +4,9 @@ Read-only Shopify POS smoke test for a physical iPad. HotWax owns these scripts;
 Shopify POS stays the unmodified App Store app. Only the separate open-source
 WebDriverAgent (WDA) helper is built and signed.
 
-**Status: live native navigation verified; automated scenario in progress.**
-WDA is built, installed and trusted. After enabling UI Automation and restarting
-the WDA test process, Appium navigated Home → Orders → first order and read the
-matching detail reference. The repeatable smoke scenario is being implemented.
+**Status: the scripted Home → Orders → first order test has passed on a real iPad.**
+The test reads native accessibility identifiers and order text through WDA;
+it does not need Device Hub, image recognition, Shopify source code or binaries.
 
 ## Setup
 
@@ -48,11 +47,10 @@ export keys, passwords, profiles or Shopify credentials into this project.
 npm run test:unit
 npm run typecheck
 npm run doctor
-# Once live selector inspection and the scenario are implemented:
 npm run test:orders
 ```
 
-The intended test begins with POS already on Home, no blocking dialog and at
+The test begins with POS already on Home, no blocking dialog and at
 least one order in the current Orders list. It preserves filters/sort, opens the
 first actual order and checks its detail reference. It leaves that detail open;
 return POS to Home yourself before each rerun. It must fail for a wrong starting
@@ -62,6 +60,33 @@ Only one iPad/worker is used. No app reset, reinstall, forced restart, automatic
 alert acceptance, whole-test retries, checkout, refunds or order modifications.
 Normal Xcode test orchestration is used for WDA, not direct preinstalled-runner
 launch. Appium listens only on `127.0.0.1`.
+
+Run the command from this project's directory. Leave the iPad unlocked and do
+not interact with it during a test. Stop any manually started Appium server on
+port 4723 first; WebdriverIO starts and stops its own local server.
+
+### Troubleshooting a run
+
+- **Wrong starting screen / blocked Home:** close any detail/modal, tap Home,
+  then rerun. The test deliberately does not repair that state for you.
+- **No loaded order rows:** check the current filters/search and network in
+  POS yourself. The test preserves them, waits up to 20 seconds, then fails.
+- **Unrecognized reference / missing native control:** inspect this POS
+  version before updating `test/screens/pos.selectors.ts`. Do not substitute
+  fixed coordinates or hardcode an order number.
+- **Not authorized for performing UI testing actions:** enable iPad Settings
+  → Developer → Enable UI Automation, end the old WDA test run in Xcode, then
+  rerun. A helper already running before the setting changed may retain the
+  failed authorization state.
+- **Signing/profile expiry:** renew WDA provisioning through Xcode using your
+  own account; no Shopify binary or signing certificate is needed.
+
+The row parser currently supports the observed English combined label
+`order reference • customer, date, status, amount`. It preserves custom order
+prefixes/suffixes, but fails closed for other label formats (including an
+unverified no-customer format). Such a failure is a selector-maintenance task,
+not a reason to change an order. Native list scrolling is capped at ten upward
+gestures; a list farther from its beginning fails rather than looping forever.
 
 ## Signing troubleshooting
 
@@ -81,16 +106,17 @@ it before sharing, and remove it yourself when no longer needed; there is no
 automatic upload or retention cleanup. Low-verbosity automation logs reduce
 routine payload logging but should still be treated as potentially sensitive.
 
-Unit tests prove only our configuration checks. A typecheck or successful WDA
-build does not prove navigation works. The actual device/app versions and live
-test results will be recorded here after verification.
+Unit tests prove configuration and reference-parser behavior, not POS behavior.
+A typecheck or successful WDA build does not prove navigation works. Failure
+screenshots and native XML are saved under `artifacts/failure-<timestamp>/`;
+capture failure never replaces the original test failure.
 
 ### Verified setup (2026-09-19, America/Chicago)
 
 - Node 26.4.0, npm 11.17.0, Xcode 27.0 (27A266a).
 - Appium 3.7.0, XCUITest 12.12.6, WDA 16.12.9; dependencies locked.
 - Connected iPad13,4 on iPadOS 27.0; Shopify POS 11.14.0 (505086).
-- 19 configuration tests, TypeScript check and read-only doctor passed.
+- 29 configuration/reference/runner tests and TypeScript check passed.
 - Missing current Apple WWDR intermediate was repaired using Apple's official
   G3 certificate with default trust. A valid development identity now exists.
 - WDA build-for-testing and strict code-signature verification passed. After
@@ -102,3 +128,17 @@ test results will be recorded here after verification.
 - POS's deep native tree requires snapshotMaxDepth 62 (the supported maximum);
   the default 50 truncated the actual order rows. A no-match search exposed
   the loading/empty UI; the search was cleared after inspection.
+- `npm run test:orders` passed on the physical iPad. The selected first row's
+  reference matched the independently scoped order detail title.
+- Current live dataset: two rows, English UI, landscape iPad layout. Long-list
+  scrolling, other languages/layouts and other empty-state variants are not
+  live-verified. Unsupported structures fail instead of guessing taps.
+
+### Implementation decisions
+
+- Read the order reference from the row's combined accessibility **label**;
+  it is not a separate element. Unexpected formats fail closed.
+- Set snapshot depth to 62 to expose the POS rows.
+- Keep Appium server logs at INFO because the WDIO service waits for its INFO
+  startup line; ERROR-only logs caused readiness detection to time out. WDIO
+  command logging remains silent. Treat the local Appium log as sensitive.

@@ -37,5 +37,6 @@ export function buildCapabilities(config: DeviceConfig) {
     'appium:wdaStartupRetries': 1,
     'appium:wdaLaunchTimeout': 120_000,
     'appium:newCommandTimeout': 120,
+    'appium:settings': { snapshotMaxDepth: 62 },
   };
 }
