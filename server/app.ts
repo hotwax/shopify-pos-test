@@ -112,6 +112,14 @@ function validOrderDetail(value: unknown): value is { connectionId: string; orde
   return validConnectionId(body.connectionId) && boundedText(body.orderId, 120) && /^[A-Za-z0-9_.-]+$/.test(body.orderId);
 }
 
+function validShopifyOrderDetail(value: unknown): value is { connectionId: string; shopId: string; gid: string; cursor?: string } {
+  if (!value || typeof value !== 'object') return false;
+  const body = value as Record<string, unknown>;
+  return validConnectionId(body.connectionId) && boundedText(body.shopId, 160) &&
+    boundedText(body.gid, 200) && /^gid:\/\/shopify\/Order\/[A-Za-z0-9_-]+$/.test(body.gid) &&
+    (body.cursor === undefined || boundedText(body.cursor, 512));
+}
+
 function sendOmsError(response: ServerResponse, error: unknown): void {
   if (error instanceof OmsError) {
     const status = error.code === 'authentication' ? 401 : error.code === 'authorization' ? 403 : error.code === 'rate-limited' ? 429 : error.code === 'configuration' ? 503 : error.code === 'invalid-data' ? 400 : 502;
@@ -190,6 +198,12 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
             const body = await readBody(request);
             if (!validShopRead(body)) { sendJson(response, 400, { ok: false, error: 'A valid connection, shop and bounded search are required.' }); return; }
             sendJson(response, 200, await options.oms.searchOrders(body.connectionId, body.shopId, { search: body.search ?? '', cursor: body.cursor }));
+            return;
+          }
+          if (request.method === 'POST' && url.pathname === '/api/oms/orders/shopify-detail') {
+            const body = await readBody(request);
+            if (!validShopifyOrderDetail(body)) { sendJson(response, 400, { ok: false, error: 'A valid connection, shop and exact Shopify order GID are required.' }); return; }
+            sendJson(response, 200, { order: await options.oms.resolveOrder(body.connectionId, body.shopId, { gid: body.gid, cursor: body.cursor }) });
             return;
           }
           if (request.method === 'POST' && url.pathname === '/api/oms/orders/records') {

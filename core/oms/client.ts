@@ -1,7 +1,7 @@
 import type { Page } from '../../shared/contracts.ts';
 import { OmsSessionStore, type FetchLike } from './auth.ts';
-import { assertNamedReadQuery, listLocationsQuery, searchOrdersQuery, searchVariantsQuery, type NamedReadOperation } from './queries/documents.ts';
-import { OmsError, boundedCursor, boundedSearch, canonicalOrigin, type OmsConnectionConfig, type OmsConnectionSummary, type OmsLocation, type OmsOrder, type OmsOrderDetail, type OmsOrderItem, type OmsOrderRecord, type OmsService, type OmsShop, type OmsVariant } from './types.ts';
+import { assertNamedReadQuery, listLocationsQuery, resolveOrderQuery, searchOrdersQuery, searchVariantsQuery, type NamedReadOperation } from './queries/documents.ts';
+import { OmsError, boundedCursor, boundedSearch, canonicalOrigin, type OmsConnectionConfig, type OmsConnectionSummary, type OmsLocation, type OmsOrder, type OmsOrderDetail, type OmsOrderItem, type OmsOrderRecord, type OmsService, type OmsShop, type OmsShopifyOrderDetail, type OmsShopifyOrderLine, type OmsVariant } from './types.ts';
 
 function object(value: unknown): Record<string, any> {
   if (!value || typeof value !== 'object') throw new OmsError('invalid-data', 'The OMS returned an invalid JSON object.');
@@ -52,6 +52,13 @@ function optionalMoney(value: unknown): string | null {
     value = (value as Record<string, unknown>).amount;
   }
   return optionalString(value);
+}
+
+function shopPrimaryLocationGid(raw: Record<string, any>): string | null {
+  const direct = optionalString(raw.primaryLocationGid ?? raw.locationGid ?? raw.primaryLocation?.id);
+  if (direct) return direct;
+  const numeric = optionalString(raw.primaryLocationId);
+  return numeric && /^\d+$/.test(numeric) ? `gid://shopify/Location/${numeric}` : null;
 }
 
 function orderPageIndex(cursor: string | undefined): number {
@@ -111,6 +118,44 @@ function mapOrderDetail(raw: Record<string, any>): OmsOrderDetail {
   };
 }
 
+function mapMoneySet(raw: Record<string, any> | undefined): { amount: string; currency: string } | null {
+  const money = raw?.shopMoney;
+  if (!money || typeof money !== 'object') return null;
+  const amount = optionalString(money.amount);
+  const currency = optionalString(money.currencyCode);
+  return amount && currency ? { amount, currency } : null;
+}
+
+function mapShopifyOrder(raw: Record<string, any>): OmsShopifyOrderDetail {
+  const gid = requiredString(raw.id, 'a Shopify order GID');
+  const lines: OmsShopifyOrderLine[] = array(raw.lineItems?.nodes).map(line => {
+    const variant = line.variant && typeof line.variant === 'object' ? line.variant as Record<string, any> : undefined;
+    const product = variant?.product && typeof variant.product === 'object' ? variant.product as Record<string, any> : undefined;
+    return {
+      gid: requiredString(line.id, 'a Shopify order line GID'),
+      quantity: optionalNumber(line.quantity) ?? 0,
+      refundableQuantity: optionalNumber(line.refundableQuantity),
+      unitPrice: mapMoneySet(line.originalUnitPriceSet),
+      variantGid: optionalString(variant?.id),
+      variantTitle: optionalString(variant?.title),
+      sku: optionalString(variant?.sku),
+      productGid: optionalString(product?.id),
+      productTitle: optionalString(product?.title),
+    };
+  });
+  const pageInfo = raw.lineItems?.pageInfo && typeof raw.lineItems.pageInfo === 'object' ? raw.lineItems.pageInfo as Record<string, any> : {};
+  return {
+    gid,
+    legacyResourceId: optionalString(raw.legacyResourceId),
+    name: requiredString(raw.name, 'a Shopify order name'),
+    financialStatus: optionalString(raw.displayFinancialStatus),
+    fulfillmentStatus: optionalString(raw.displayFulfillmentStatus),
+    total: mapMoneySet(raw.totalPriceSet),
+    lines,
+    nextCursor: pageInfo.hasNextPage && typeof pageInfo.endCursor === 'string' ? pageInfo.endCursor : null,
+  };
+}
+
 export class OmsClient implements OmsService {
   private readonly connectionsById = new Map<string, OmsConnectionConfig>();
   private readonly sessions: OmsSessionStore;
@@ -161,7 +206,7 @@ export class OmsClient implements OmsService {
       shopGid: String(raw.shopifyShopId ?? raw.shopGid ?? raw.shop?.id ?? ''),
       shopDomain: String(raw.shopDomain ?? raw.domain ?? raw.shop?.domain ?? ''),
       name: String(raw.shopName ?? raw.name ?? raw.shop?.name ?? raw.shopDomain ?? 'Unnamed shop'),
-      locationGid: raw.primaryLocationGid ?? raw.locationGid ?? raw.primaryLocation?.id ?? null,
+      locationGid: shopPrimaryLocationGid(raw),
       currency: raw.currency ?? null,
       timezone: raw.timezone ?? null,
     }));
@@ -200,6 +245,13 @@ export class OmsClient implements OmsService {
   async searchOrders(connectionId: string, connectorShopId: string, input: { search: string; cursor?: string }): Promise<Page<OmsOrder>> {
     const data = await this.graphql(connectionId, connectorShopId, 'searchOrders', searchOrdersQuery, { first: 25, after: boundedCursor(input.cursor), query: boundedSearch(input.search) || null });
     return page(data.orders, raw => ({ gid: requiredString(raw.id, 'an order ID'), name: requiredString(raw.name, 'an order name'), financialStatus: raw.displayFinancialStatus == null ? null : String(raw.displayFinancialStatus), fulfillmentStatus: raw.displayFulfillmentStatus == null ? null : String(raw.displayFulfillmentStatus) }));
+  }
+
+  async resolveOrder(connectionId: string, connectorShopId: string, input: { gid: string; cursor?: string }): Promise<OmsShopifyOrderDetail> {
+    if (!/^gid:\/\/shopify\/Order\/[A-Za-z0-9_-]+$/.test(input.gid)) throw new OmsError('invalid-data', 'The Shopify order identifier must be an exact order GID.');
+    const data = await this.graphql(connectionId, connectorShopId, 'resolveOrder', resolveOrderQuery, { id: input.gid, lineFirst: 50, lineAfter: boundedCursor(input.cursor) });
+    if (!data.order || typeof data.order !== 'object') throw new OmsError('invalid-data', 'The selected Shopify order was not found in the selected shop.');
+    return mapShopifyOrder(data.order as Record<string, any>);
   }
 
   async searchOrderRecords(connectionId: string, input: { search?: string; cursor?: string }): Promise<Page<OmsOrderRecord>> {

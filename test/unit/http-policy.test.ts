@@ -86,6 +86,7 @@ test('keeps OMS credentials on the localhost sidecar and exposes only named read
     shops: async () => [{ connectorShopId: 'shop-1', shopGid: 'gid://shopify/Shop/1', shopDomain: 'test.myshopify.com', name: 'Test', locationGid: null, currency: 'USD', timezone: 'UTC' }],
     searchVariants: async () => ({ items: [], nextCursor: null }),
     searchOrders: async () => ({ items: [], nextCursor: null }),
+    resolveOrder: async () => ({ gid: 'gid://shopify/Order/1', legacyResourceId: '1', name: '#1', financialStatus: 'PAID', fulfillmentStatus: null, total: { amount: '1.00', currency: 'USD' }, lines: [], nextCursor: null }),
     searchOrderRecords: async () => ({ items: [{ orderId: 'M1', orderName: 'M1', externalId: null, statusId: 'ORDER_APPROVED', orderDate: null, grandTotal: null, currency: null, itemCount: 0 }], nextCursor: null }),
     getOrderDetail: async () => ({ orderId: 'M1', orderName: 'M1', externalId: null, statusId: 'ORDER_APPROVED', orderDate: null, grandTotal: null, currency: null, items: [] }),
     listLocations: async () => ({ items: [], nextCursor: null }),
@@ -110,6 +111,13 @@ test('keeps OMS credentials on the localhost sidecar and exposes only named read
     const detail = await fetch(`${server.url}/api/oms/orders/detail`, { method: 'POST', headers, body: JSON.stringify({ connectionId: 'local', orderId: 'M1' }) });
     assert.equal(detail.status, 200);
     assert.equal((await detail.json() as { order: { orderId: string } }).order.orderId, 'M1');
+
+    const shopifyDetail = await fetch(`${server.url}/api/oms/orders/shopify-detail`, { method: 'POST', headers, body: JSON.stringify({ connectionId: 'local', shopId: 'shop-1', gid: 'gid://shopify/Order/1' }) });
+    assert.equal(shopifyDetail.status, 200);
+    assert.equal((await shopifyDetail.json() as { order: { gid: string } }).order.gid, 'gid://shopify/Order/1');
+
+    const unsafeShopifyDetail = await fetch(`${server.url}/api/oms/orders/shopify-detail`, { method: 'POST', headers, body: JSON.stringify({ connectionId: 'local', shopId: 'shop-1', gid: 'gid://shopify/Product/1' }) });
+    assert.equal(unsafeShopifyDetail.status, 400);
 
     const unsafeDetail = await fetch(`${server.url}/api/oms/orders/detail`, { method: 'POST', headers, body: JSON.stringify({ connectionId: 'local', orderId: '../M1' }) });
     assert.equal(unsafeDetail.status, 400);

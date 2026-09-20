@@ -54,6 +54,12 @@ currency, timezone, plan name and related remote/configuration fields. The
 desktop adapter must project only the fields needed by the UI; it must not
 return connector credentials or raw remote configuration to the browser.
 
+For the observed `hc-sandbox` record, OMS `primaryLocationId` was numeric and
+matched the Shopify GraphQL location ID after the standard
+`gid://shopify/Location/<numeric-id>` projection. The adapter applies that
+projection only to a numeric value; an unrecognized facility-like value remains
+unknown instead of being presented as a Shopify location GID.
+
 ## Shopify GraphQL reads
 
 ```text
@@ -84,7 +90,7 @@ context cannot be read by this session before enabling the data browser.
 ## Adapter rules
 
 The browser can call only named operations such as `searchVariants`,
-`searchOrders`, `listLocations`, `resolveReference` and `verifyOrder`. It cannot
+`searchOrders`, `resolveOrder` and `listLocations`. It cannot
 submit arbitrary GraphQL text, a connector remote ID, or a user-selected URL.
 The sidecar resolves the selected OMS shop, validates the operation document,
 enforces read-only GraphQL AST rules, bounds pagination and normalizes the
@@ -134,3 +140,12 @@ connector configuration, and unrecognized fields are not sent to the browser.
 Missing `returnableQuantity` stays unavailable; the toolkit does not infer
 eligibility by subtracting quantities. These reads inform a future POS return
 or exchange workflow but do not enable or perform a mutation.
+
+For Shopify order planning, `resolveOrder` accepts only an exact Shopify order
+GID and returns a bounded, safe projection of the order header and line items:
+line GID, quantity, refundable quantity, original unit price, variant/product
+identifiers and titles, SKU, and the line pagination cursor. The live
+`ResolveOrder` document was accepted by the configured test connector on
+2026-09-20 and returned the expected Shopify order fields. A line may have no
+variant (for example, a custom sale), so the adapter preserves those fields as
+unknown rather than inventing product IDs.

@@ -12,6 +12,21 @@ export const searchOrdersQuery = `query SearchOrders($first: Int!, $after: Strin
   }
 }`;
 
+export const resolveOrderQuery = `query ResolveOrder($id: ID!, $lineFirst: Int!, $lineAfter: String) {
+  order(id: $id) {
+    id legacyResourceId name displayFinancialStatus displayFulfillmentStatus
+    totalPriceSet { shopMoney { amount currencyCode } }
+    lineItems(first: $lineFirst, after: $lineAfter) {
+      nodes {
+        id quantity refundableQuantity
+        originalUnitPriceSet { shopMoney { amount currencyCode } }
+        variant { id title sku product { id title } }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}`;
+
 export const listLocationsQuery = `query ListLocations($first: Int!, $after: String) {
   locations(first: $first, after: $after) {
     nodes { id name }
@@ -22,6 +37,7 @@ export const listLocationsQuery = `query ListLocations($first: Int!, $after: Str
 export const namedReadQueries = {
   searchVariants: searchVariantsQuery,
   searchOrders: searchOrdersQuery,
+  resolveOrder: resolveOrderQuery,
   listLocations: listLocationsQuery,
 } as const;
 

@@ -55,13 +55,29 @@
                 <ion-input v-model="orderSearch" placeholder="Search orders" aria-label="Search orders" />
                 <ion-button @click="searchOrders()" :disabled="orderLoading">{{ orderLoading ? 'Searching…' : 'Search' }}</ion-button>
                 <ion-list>
-                  <ion-item v-for="item in orders" :key="item.gid" button detail="false" @click="selectedOrder = item">
+                  <ion-item v-for="item in orders" :key="item.gid" button detail="false" @click="selectShopifyOrder(item)">
                     <ion-label>{{ item.name }}<p>{{ item.financialStatus || 'Unknown financial status' }} · {{ item.gid }}</p></ion-label>
                     <ion-badge slot="end" v-if="selectedOrder?.gid === item.gid">Selected</ion-badge>
                   </ion-item>
                 </ion-list>
                 <ion-button fill="clear" @click="searchOrders(true)" :disabled="orderLoading" v-if="orderCursor">Load more orders</ion-button>
                 <ion-note v-if="selectedOrder" color="success"><p>Selected order: {{ selectedOrder.gid }}</p></ion-note>
+                <ion-button fill="outline" @click="loadShopifyOrderDetail()" :disabled="shopifyDetailLoading" v-if="selectedOrder">{{ shopifyDetailLoading ? 'Loading lines…' : 'Load Shopify order lines' }}</ion-button>
+                <ion-note v-if="shopifyDetailError" color="danger"><p>{{ shopifyDetailError }}</p></ion-note>
+                <ion-card v-if="selectedShopifyDetail" color="light">
+                  <ion-card-header><ion-card-title>{{ selectedShopifyDetail.name }} · Shopify detail</ion-card-title></ion-card-header>
+                  <ion-card-content>
+                    <p>{{ selectedShopifyDetail.financialStatus || 'Unknown financial status' }} · {{ selectedShopifyDetail.fulfillmentStatus || 'Unknown fulfillment status' }}<br>{{ selectedShopifyDetail.total?.amount || 'Total unavailable' }} {{ selectedShopifyDetail.total?.currency || '' }}</p>
+                    <ion-list>
+                      <ion-item v-for="line in selectedShopifyDetail.lines" :key="line.gid">
+                        <ion-label>{{ line.productTitle || line.variantTitle || 'Unknown product' }}<p>{{ line.variantGid || 'No variant ID' }} · {{ line.sku || 'No SKU' }} · quantity {{ line.quantity }}</p></ion-label>
+                        <ion-note slot="end">refundable {{ line.refundableQuantity ?? 'unavailable' }}</ion-note>
+                      </ion-item>
+                    </ion-list>
+                    <ion-button fill="clear" @click="loadShopifyOrderDetail(true)" :disabled="shopifyDetailLoading" v-if="selectedShopifyDetail.nextCursor">Load more lines</ion-button>
+                    <ion-note>Read-only data from the named OMS Shopify GraphQL operation. It does not enable or perform a POS mutation.</ion-note>
+                  </ion-card-content>
+                </ion-card>
               </ion-card-content>
             </ion-card>
           </ion-col>
@@ -122,8 +138,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { IonBadge, IonButton, IonCard, IonCardContent, IonCardHeader, IonCardTitle, IonCol, IonContent, IonGrid, IonHeader, IonInput, IonItem, IonLabel, IonList, IonNote, IonPage, IonRow, IonSelect, IonSelectOption, IonText, IonTitle, IonToolbar } from '@ionic/vue';
-import type { OmsConnectionSummary, OmsLocation, OmsOrder, OmsOrderDetail, OmsOrderRecord, OmsShop, OmsVariant } from '../../shared/contracts.ts';
-import { getOmsConnections, getOmsOrderDetail, getOmsShops, listOmsLocations, loginOms, logoutOms, searchOmsOrderRecords as searchOmsOrderRecordsRequest, searchOmsOrders, searchOmsVariants } from '../api.ts';
+import type { OmsConnectionSummary, OmsLocation, OmsOrder, OmsOrderDetail, OmsOrderRecord, OmsShop, OmsShopifyOrderDetail, OmsVariant } from '../../shared/contracts.ts';
+import { getOmsConnections, getOmsOrderDetail, getOmsShops, getOmsShopifyOrderDetail, listOmsLocations, loginOms, logoutOms, searchOmsOrderRecords as searchOmsOrderRecordsRequest, searchOmsOrders, searchOmsVariants } from '../api.ts';
 
 const connections = ref<OmsConnectionSummary[]>([]);
 const shops = ref<OmsShop[]>([]);
@@ -133,6 +149,7 @@ const locations = ref<OmsLocation[]>([]);
 const omsOrders = ref<OmsOrderRecord[]>([]);
 const selectedOmsOrder = ref<OmsOrderRecord>();
 const selectedOmsDetail = ref<OmsOrderDetail>();
+const selectedShopifyDetail = ref<OmsShopifyOrderDetail>();
 const selectedVariant = ref<OmsVariant>();
 const selectedOrder = ref<OmsOrder>();
 const selectedLocation = ref<OmsLocation>();
@@ -142,8 +159,9 @@ const locationCursor = ref<string | null>(null);
 const omsOrderCursor = ref<string | null>(null);
 const activeConnectionId = ref(''); const shopId = ref(''); const username = ref(''); const password = ref('');
 const variantSearch = ref(''); const orderSearch = ref(''); const omsOrderSearch = ref(''); const loading = ref(true); const busy = ref(false); const error = ref('');
-const variantLoading = ref(false); const orderLoading = ref(false); const locationLoading = ref(false); const omsOrderLoading = ref(false); const omsDetailLoading = ref(false);
-let variantRequest = 0; let orderRequest = 0; let locationRequest = 0; let omsOrderRequest = 0; let omsDetailRequest = 0;
+const variantLoading = ref(false); const orderLoading = ref(false); const locationLoading = ref(false); const omsOrderLoading = ref(false); const omsDetailLoading = ref(false); const shopifyDetailLoading = ref(false);
+const shopifyDetailError = ref('');
+let variantRequest = 0; let orderRequest = 0; let locationRequest = 0; let omsOrderRequest = 0; let omsDetailRequest = 0; let shopifyDetailRequest = 0;
 const activeConnection = computed(() => connections.value.find(connection => connection.id === activeConnectionId.value));
 const selectedShop = computed(() => shops.value.find(shop => shop.connectorShopId === shopId.value));
 
@@ -153,6 +171,7 @@ function clearShopData(): void {
   variants.value = []; orders.value = []; locations.value = [];
   variantCursor.value = null; orderCursor.value = null; locationCursor.value = null;
   selectedVariant.value = undefined; selectedOrder.value = undefined; selectedLocation.value = undefined;
+  shopifyDetailRequest++; shopifyDetailLoading.value = false; shopifyDetailError.value = ''; selectedShopifyDetail.value = undefined;
 }
 
 function clearOmsData(): void {
@@ -162,13 +181,38 @@ function clearOmsData(): void {
   selectedOmsOrder.value = undefined; selectedOmsDetail.value = undefined;
 }
 
+function selectShopifyOrder(item: OmsOrder | undefined): void {
+  selectedOrder.value = item;
+  shopifyDetailRequest++;
+  shopifyDetailLoading.value = false;
+  shopifyDetailError.value = '';
+  selectedShopifyDetail.value = undefined;
+}
+
 async function refreshConnections() { loading.value = true; error.value = ''; try { connections.value = (await getOmsConnections()).connections; if (!activeConnectionId.value && connections.value[0]) activeConnectionId.value = connections.value[0].id; } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Could not read OMS configuration.'; } finally { loading.value = false; } }
 async function login(id: string) { busy.value = true; error.value = ''; try { await loginOms(id, username.value, password.value); username.value = ''; password.value = ''; await refreshConnections(); await loadShops(id); } catch (cause) { password.value = ''; error.value = cause instanceof Error ? cause.message : 'OMS login failed.'; } finally { busy.value = false; } }
 async function logout(id: string) { busy.value = true; error.value = ''; try { await logoutOms(id); shops.value = []; shopId.value = ''; clearShopData(); clearOmsData(); await refreshConnections(); } catch (cause) { error.value = cause instanceof Error ? cause.message : 'OMS logout failed.'; } finally { busy.value = false; } }
 async function loadShops(id: string) { busy.value = true; error.value = ''; clearShopData(); try { activeConnectionId.value = id; shops.value = (await getOmsShops(id)).shops; shopId.value = shops.value[0]?.connectorShopId ?? ''; } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Could not load OMS shops.'; } finally { busy.value = false; } }
 function shopChanged(): void { clearShopData(); }
 async function searchVariants(append = false) { if (!shopId.value || variantLoading.value) return; const request = ++variantRequest; variantLoading.value = true; error.value = ''; try { const result = await searchOmsVariants({ connectionId: activeConnectionId.value, shopId: shopId.value, search: variantSearch.value, cursor: append ? variantCursor.value ?? undefined : undefined }); if (request !== variantRequest) return; variants.value = append ? [...variants.value, ...result.items] : result.items; variantCursor.value = result.nextCursor; if (!append) selectedVariant.value = undefined; } catch (cause) { if (request === variantRequest) error.value = cause instanceof Error ? cause.message : 'Variant search failed.'; } finally { if (request === variantRequest) variantLoading.value = false; } }
-async function searchOrders(append = false) { if (!shopId.value || orderLoading.value) return; const request = ++orderRequest; orderLoading.value = true; error.value = ''; try { const result = await searchOmsOrders({ connectionId: activeConnectionId.value, shopId: shopId.value, search: orderSearch.value, cursor: append ? orderCursor.value ?? undefined : undefined }); if (request !== orderRequest) return; orders.value = append ? [...orders.value, ...result.items] : result.items; orderCursor.value = result.nextCursor; if (!append) selectedOrder.value = undefined; } catch (cause) { if (request === orderRequest) error.value = cause instanceof Error ? cause.message : 'Order search failed.'; } finally { if (request === orderRequest) orderLoading.value = false; } }
+async function searchOrders(append = false) { if (!shopId.value || orderLoading.value) return; const request = ++orderRequest; orderLoading.value = true; error.value = ''; try { const result = await searchOmsOrders({ connectionId: activeConnectionId.value, shopId: shopId.value, search: orderSearch.value, cursor: append ? orderCursor.value ?? undefined : undefined }); if (request !== orderRequest) return; orders.value = append ? [...orders.value, ...result.items] : result.items; orderCursor.value = result.nextCursor; if (!append) selectShopifyOrder(undefined); } catch (cause) { if (request === orderRequest) error.value = cause instanceof Error ? cause.message : 'Order search failed.'; } finally { if (request === orderRequest) orderLoading.value = false; } }
+async function loadShopifyOrderDetail(append = false) {
+  if (!selectedOrder.value || !activeConnectionId.value || !shopId.value || shopifyDetailLoading.value) return;
+  const request = ++shopifyDetailRequest;
+  shopifyDetailLoading.value = true;
+  shopifyDetailError.value = '';
+  try {
+    const result = await getOmsShopifyOrderDetail({ connectionId: activeConnectionId.value, shopId: shopId.value, gid: selectedOrder.value.gid, cursor: append ? selectedShopifyDetail.value?.nextCursor ?? undefined : undefined });
+    if (request !== shopifyDetailRequest) return;
+    selectedShopifyDetail.value = append && selectedShopifyDetail.value
+      ? { ...result.order, lines: [...selectedShopifyDetail.value.lines, ...result.order.lines] }
+      : result.order;
+  } catch (cause) {
+    if (request === shopifyDetailRequest) shopifyDetailError.value = cause instanceof Error ? cause.message : 'Shopify order detail failed.';
+  } finally {
+    if (request === shopifyDetailRequest) shopifyDetailLoading.value = false;
+  }
+}
 async function searchOmsOrderRecords(append = false) { if (!activeConnectionId.value || omsOrderLoading.value) return; const request = ++omsOrderRequest; omsOrderLoading.value = true; error.value = ''; try { const result = await searchOmsOrderRecordsRequest({ connectionId: activeConnectionId.value, search: omsOrderSearch.value, cursor: append ? omsOrderCursor.value ?? undefined : undefined }); if (request !== omsOrderRequest) return; omsOrders.value = append ? [...omsOrders.value, ...result.items] : result.items; omsOrderCursor.value = result.nextCursor; if (!append) { selectedOmsOrder.value = undefined; selectedOmsDetail.value = undefined; } } catch (cause) { if (request === omsOrderRequest) error.value = cause instanceof Error ? cause.message : 'OMS order search failed.'; } finally { if (request === omsOrderRequest) omsOrderLoading.value = false; } }
 async function loadOmsOrderDetail(item: OmsOrderRecord) { const request = ++omsDetailRequest; selectedOmsOrder.value = item; selectedOmsDetail.value = undefined; omsDetailLoading.value = true; error.value = ''; try { const result = await getOmsOrderDetail(activeConnectionId.value, item.orderId); if (request !== omsDetailRequest) return; selectedOmsDetail.value = result.order; } catch (cause) { if (request === omsDetailRequest) error.value = cause instanceof Error ? cause.message : 'OMS order detail failed.'; } finally { if (request === omsDetailRequest) omsDetailLoading.value = false; } }
 async function loadLocations(append = false) { if (!shopId.value || locationLoading.value) return; const request = ++locationRequest; locationLoading.value = true; error.value = ''; try { const result = await listOmsLocations({ connectionId: activeConnectionId.value, shopId: shopId.value, cursor: append ? locationCursor.value ?? undefined : undefined }); if (request !== locationRequest) return; locations.value = append ? [...locations.value, ...result.items] : result.items; locationCursor.value = result.nextCursor; if (!append) selectedLocation.value = undefined; } catch (cause) { if (request === locationRequest) error.value = cause instanceof Error ? cause.message : 'Location read failed.'; } finally { if (request === locationRequest) locationLoading.value = false; } }

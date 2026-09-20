@@ -38,6 +38,29 @@ export interface OmsOrder {
   fulfillmentStatus: string | null;
 }
 
+export interface OmsShopifyOrderLine {
+  gid: string;
+  quantity: number;
+  refundableQuantity: number | null;
+  unitPrice: { amount: string; currency: string } | null;
+  variantGid: string | null;
+  variantTitle: string | null;
+  sku: string | null;
+  productGid: string | null;
+  productTitle: string | null;
+}
+
+export interface OmsShopifyOrderDetail {
+  gid: string;
+  legacyResourceId: string | null;
+  name: string;
+  financialStatus: string | null;
+  fulfillmentStatus: string | null;
+  total: { amount: string; currency: string } | null;
+  lines: OmsShopifyOrderLine[];
+  nextCursor: string | null;
+}
+
 export interface OmsOrderRecord {
   orderId: string;
   orderName: string;
@@ -87,6 +110,7 @@ export interface OmsService {
   shops(connectionId: string): Promise<OmsShop[]>;
   searchVariants(connectionId: string, connectorShopId: string, input: { search: string; cursor?: string }): Promise<Page<OmsVariant>>;
   searchOrders(connectionId: string, connectorShopId: string, input: { search: string; cursor?: string }): Promise<Page<OmsOrder>>;
+  resolveOrder(connectionId: string, connectorShopId: string, input: { gid: string; cursor?: string }): Promise<OmsShopifyOrderDetail>;
   searchOrderRecords(connectionId: string, input: { search?: string; cursor?: string }): Promise<Page<OmsOrderRecord>>;
   getOrderDetail(connectionId: string, orderId: string): Promise<OmsOrderDetail>;
   listLocations(connectionId: string, connectorShopId: string, input: { cursor?: string }): Promise<Page<OmsLocation>>;
