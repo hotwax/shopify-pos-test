@@ -47,7 +47,10 @@ function securityHeaders(response: ServerResponse): void {
   response.setHeader('X-Content-Type-Options', 'nosniff');
   response.setHeader('X-Frame-Options', 'DENY');
   response.setHeader('Referrer-Policy', 'no-referrer');
-  response.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+  // Ionic applies a small amount of runtime styling for overlays and controls.
+  // Keep scripts, connections and all other resource classes restricted while
+  // allowing that required style path; no inline script is enabled here.
+  response.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
 }
 
 function authenticate(request: IncomingMessage, response: ServerResponse, token: string, allowedOrigins: string[]): boolean {

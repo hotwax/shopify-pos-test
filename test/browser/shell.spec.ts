@@ -14,6 +14,9 @@ test('built localhost shell serves the SPA and its catalog API', async () => {
     const root = await fetch(`${server.url}/`, { headers: { Host: `127.0.0.1:${server.port}` } });
     assert.equal(root.status, 200);
     assert.match(await root.text(), /HotWax POS Testing/);
+    const contentSecurityPolicy = root.headers.get('content-security-policy') ?? '';
+    assert.match(contentSecurityPolicy, /style-src 'self' 'unsafe-inline'/);
+    assert.doesNotMatch(contentSecurityPolicy, /script-src[^;]*unsafe-inline/);
 
     const spaRoute = await fetch(`${server.url}/scripts`, { headers: { Host: `127.0.0.1:${server.port}` } });
     assert.equal(spaRoute.status, 200);
