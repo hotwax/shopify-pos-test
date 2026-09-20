@@ -41,6 +41,22 @@ function versionMajor(version: string | undefined): number | null {
   return Number.isFinite(major) ? major : null;
 }
 
+export interface DeviceLockState {
+  passcodeRequired: boolean;
+  unlockedSinceBoot: boolean;
+}
+
+/** Read-only CoreDevice preflight. This command never unlocks or changes the iPad. */
+export async function readDeviceLockState(udid: string, run: CommandRunner = command): Promise<DeviceLockState> {
+  const output = await run('xcrun', ['devicectl', 'device', 'info', 'lockState', '--device', udid, '--timeout', '15', '--quiet', '--json-output', '-', '--omit-deprecated-fields-in-json']);
+  const parsed = jsonResult(output);
+  const result = parsed.result ?? parsed;
+  if (typeof result?.passcodeRequired !== 'boolean' || typeof result?.unlockedSinceBoot !== 'boolean') {
+    throw new Error('CoreDevice returned an incomplete iPad lock-state response.');
+  }
+  return { passcodeRequired: result.passcodeRequired, unlockedSinceBoot: result.unlockedSinceBoot };
+}
+
 export async function listDevices(run: CommandRunner = command): Promise<{ udid: string; name: string; model: string; os: string }[]> {
   const output = await run('xcrun', ['devicectl', 'list', 'devices', '--json-output', '-', '--omit-deprecated-fields-in-json']);
   const result = jsonResult(output).result ?? jsonResult(output);
@@ -104,6 +120,14 @@ export async function runSetupChecks(profile: DeviceProfile, run: CommandRunner 
   }
 
   try {
+    const lockState = await readDeviceLockState(profile.udid, run);
+    const unlocked = !lockState.passcodeRequired;
+    checks.push(check('device.unlocked', unlocked ? 'ready' : 'action', unlocked ? 'CoreDevice reports that the iPad is unlocked for automation.' : 'CoreDevice reports that the iPad is locked and requires its passcode.', unlocked ? [] : ['Unlock the iPad yourself and leave it awake before starting a native test.']));
+  } catch (error) {
+    checks.push(check('device.unlocked', 'action', `The iPad lock state could not be verified: ${error instanceof Error ? error.message : String(error)}`, ['Reconnect and unlock the selected iPad, then run setup checks again.']));
+  }
+
+  try {
     const output = await run('xcrun', ['devicectl', 'device', 'info', 'apps', '--device', profile.udid, '--include-default-apps', '--bundle-id', 'com.jadedpixel.pos', '--timeout', '15', '--json-output', '-', '--omit-deprecated-fields-in-json']);
     const apps = (jsonResult(output).result?.apps ?? []) as { bundleIdentifier?: string; version?: string; bundleVersion?: string }[];
     const pos = apps.find(app => app.bundleIdentifier === 'com.jadedpixel.pos');
@@ -120,7 +144,7 @@ export async function runSetupChecks(profile: DeviceProfile, run: CommandRunner 
     checks.push(check('signing.identity', 'action', `Signing identities could not be checked: ${error instanceof Error ? error.message : String(error)}`, ['Open Xcode and create an Apple Development certificate.']));
   }
 
-  const hostReady = xcodeReady && checks.every(item => ['host.node', 'host.xcode', 'device.pairing', 'device.developer', 'device.os', 'pos.installed', 'signing.identity'].includes(item.id) ? item.state === 'ready' : true);
+  const hostReady = xcodeReady && checks.every(item => ['host.node', 'host.xcode', 'device.pairing', 'device.developer', 'device.os', 'device.unlocked', 'pos.installed', 'signing.identity'].includes(item.id) ? item.state === 'ready' : true);
   checks.push(check('wda.session', 'action', hostReady ? 'A live WDA/Appium session has not been verified in this setup run.' : 'WDA is blocked until host and device prerequisites pass.', ['If Apple asks for a password, trust or UI Automation action, complete it yourself. The toolkit will not change those settings.']));
   checks.push(check('pos.home', 'action', 'Shopify POS Home has not been verified by a live native accessibility query.', ['Open Shopify POS yourself on Home, dismiss dialogs and keep the iPad unlocked before running.']));
   return checks;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { listDevices, runSetupChecks, type CommandRunner } from '../../core/setup/checks.ts';
+import { listDevices, readDeviceLockState, runSetupChecks, type CommandRunner } from '../../core/setup/checks.ts';
 import type { DeviceProfile } from '../../shared/contracts.ts';
 
 const profile: DeviceProfile = {
@@ -31,6 +31,16 @@ const currentPairedDevice = JSON.stringify({ result: {
   },
 } });
 const posApps = JSON.stringify({ result: { apps: [{ bundleIdentifier: 'com.jadedpixel.pos', version: '11.14.0', bundleVersion: '505086' }] } });
+const unlockedDevice = JSON.stringify({ result: { passcodeRequired: false, unlockedSinceBoot: true } });
+const lockedDevice = JSON.stringify({ result: { passcodeRequired: true, unlockedSinceBoot: true } });
+
+function lockStateKey(): string {
+  return `xcrun devicectl device info lockState --device ${profile.udid} --timeout 15 --quiet --json-output - --omit-deprecated-fields-in-json`;
+}
+
+test('reads CoreDevice lock state without changing the iPad', async () => {
+  assert.deepEqual(await readDeviceLockState(profile.udid, runner({ [lockStateKey()]: lockedDevice })), { passcodeRequired: true, unlockedSinceBoot: true });
+});
 
 test('distinguishes full Xcode from command-line tools', async () => {
   const checks = await runSetupChecks(profile, runner({
@@ -45,6 +55,7 @@ test('reports missing development identity without turning the setup green', asy
     'xcode-select -p': '/Applications/Xcode.app/Contents/Developer',
     'xcodebuild -version': 'Xcode 27.0\nBuild version 27A266a',
     [`xcrun devicectl device info details --device ${profile.udid} --timeout 15 --json-output - --omit-deprecated-fields-in-json`]: pairedDevice,
+    [lockStateKey()]: unlockedDevice,
     [`xcrun devicectl device info apps --device ${profile.udid} --include-default-apps --bundle-id com.jadedpixel.pos --timeout 15 --json-output - --omit-deprecated-fields-in-json`]: posApps,
     'security find-identity -v -p codesigning': '0 valid identities found',
   }));
@@ -61,6 +72,7 @@ test('reports unpaired, unsupported and not-installed device states', async () =
       connectionProperties: { pairingState: 'unpaired' },
       deviceProperties: { developerModeStatus: 'enabled', osVersionNumber: '99.0' },
     } }),
+    [lockStateKey()]: unlockedDevice,
     [`xcrun devicectl device info apps --device ${profile.udid} --include-default-apps --bundle-id com.jadedpixel.pos --timeout 15 --json-output - --omit-deprecated-fields-in-json`]: JSON.stringify({ result: { apps: [] } }),
     'security find-identity -v -p codesigning': '1) ABCDE Apple Development: Test',
   }));
@@ -74,11 +86,14 @@ test('never marks WDA or POS Home ready without a user-owned live session', asyn
     'xcode-select -p': '/Applications/Xcode.app/Contents/Developer',
     'xcodebuild -version': 'Xcode 27.0\nBuild version 27A266a',
     [`xcrun devicectl device info details --device ${profile.udid} --timeout 15 --json-output - --omit-deprecated-fields-in-json`]: pairedDevice,
+    [lockStateKey()]: lockedDevice,
     [`xcrun devicectl device info apps --device ${profile.udid} --include-default-apps --bundle-id com.jadedpixel.pos --timeout 15 --json-output - --omit-deprecated-fields-in-json`]: posApps,
     'security find-identity -v -p codesigning': '1) ABCDE Apple Development: Test',
   }));
   assert.equal(checks.find(check => check.id === 'wda.session')?.state, 'action');
   assert.equal(checks.find(check => check.id === 'pos.home')?.state, 'action');
+  assert.equal(checks.find(check => check.id === 'device.unlocked')?.state, 'action');
+  assert.match(checks.find(check => check.id === 'device.unlocked')?.message ?? '', /locked/i);
 });
 
 test('parses device discovery without exposing process output beyond safe identity fields', async () => {
@@ -95,6 +110,7 @@ test('parses the current CoreDevice properties shape without changing device set
     'xcode-select -p': '/Applications/Xcode.app/Contents/Developer',
     'xcodebuild -version': 'Xcode 27.0\nBuild version 27A266a',
     [`xcrun devicectl device info details --device ${profile.udid} --timeout 15 --json-output - --omit-deprecated-fields-in-json`]: currentPairedDevice,
+    [lockStateKey()]: unlockedDevice,
     [`xcrun devicectl device info apps --device ${profile.udid} --include-default-apps --bundle-id com.jadedpixel.pos --timeout 15 --json-output - --omit-deprecated-fields-in-json`]: posApps,
     'security find-identity -v -p codesigning': '1) ABCDE Apple Development: Test',
   }));

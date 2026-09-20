@@ -8,7 +8,8 @@ import { isTerminalState } from '../core/runner/protocol.ts';
 import { readDeviceConfig } from '../config/device.ts';
 import { registry } from '../test/scenarios/registry.ts';
 import { readMutationReadiness } from '../core/safety/readiness.ts';
-import { assertScenarioCanRun } from '../core/runner/guards.ts';
+import { assertScenarioCanRun, RunBlockedError } from '../core/runner/guards.ts';
+import { readDeviceLockState } from '../core/setup/checks.ts';
 import { validateRunRequestAgainstCatalog } from '../core/catalog/validate.ts';
 
 const root = resolve(import.meta.dirname, '..');
@@ -38,6 +39,10 @@ const revision = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encodi
 const coordinator = createCoordinator({
   root,
   workerFactory: async ({ runId, request, artifactDir, inputFile }) => {
+    const lockState = await readDeviceLockState(device.udid);
+    if (lockState.passcodeRequired) {
+      throw new RunBlockedError('device-locked', 'CoreDevice reports that the iPad is locked. Unlock it yourself and leave Shopify POS on Home; the toolkit did not change iPad access settings.');
+    }
     const wdaDerivedDataPath = resolve(root, '.runtime', 'runs', runId, 'wda');
     const env = {
       ...makeWorkerEnvironment({ id: request.deviceProfileId, ...device }, runId, artifactDir, appiumPort, wdaLocalPort, wdaDerivedDataPath, root, inputFile),

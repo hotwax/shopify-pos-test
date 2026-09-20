@@ -5,8 +5,9 @@ import { findAvailablePort, makeWorkerEnvironment, spawn } from './process.ts';
 import type { WorkerFactory } from './coordinator.ts';
 import { registry } from '../../test/scenarios/registry.ts';
 import { readMutationReadiness } from '../safety/readiness.ts';
-import { assertScenarioCanRun } from './guards.ts';
+import { assertScenarioCanRun, RunBlockedError } from './guards.ts';
 import { validateRunRequestAgainstCatalog } from '../catalog/validate.ts';
+import { readDeviceLockState } from '../setup/checks.ts';
 
 export function createWdioWorkerFactory(root: string): WorkerFactory {
   return async ({ runId, request, artifactDir, inputFile }) => {
@@ -19,6 +20,10 @@ export function createWdioWorkerFactory(root: string): WorkerFactory {
     const scenario = registry.find(candidate => candidate.id === script.scenario);
     if (!scenario) throw new Error('The selected scenario is unavailable.');
     assertScenarioCanRun(scenario.effect, request, await readMutationReadiness(root));
+    const lockState = await readDeviceLockState(profile.udid);
+    if (lockState.passcodeRequired) {
+      throw new RunBlockedError('device-locked', 'CoreDevice reports that the iPad is locked. Unlock it yourself and leave Shopify POS on Home; the toolkit did not change iPad access settings.');
+    }
     const appiumPort = await findAvailablePort(4723);
     const wdaLocalPort = await findAvailablePort(8101);
     const wdaDerivedDataPath = resolve(root, '.runtime', 'runs', runId, 'wda');

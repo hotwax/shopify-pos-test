@@ -169,8 +169,10 @@ port 4723 first; WebdriverIO starts and stops its own local server.
 - **Xcode says “Unlock iPad to Continue”:** unlock the iPad yourself and leave
   it awake on Shopify POS Home, then start a fresh run. The toolkit does not
   enter a passcode, wake the device, or alter its security/automation state.
-  The run is recorded as **blocked**, with this user-owned action, rather than
-  being treated as a generic test failure.
+  Setup checks use CoreDevice's read-only lock-state query, and the runner
+  repeats that check before starting Appium/WDA. The run is recorded as
+  **blocked**, with this user-owned action, rather than being treated as a
+  generic test failure.
 - **Signing/profile expiry:** renew WDA provisioning through Xcode using your
   own account; no Shopify binary or signing certificate is needed.
 
