@@ -2,6 +2,8 @@ import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createApiServer } from './app.ts';
 import { createLaunchLock } from './session.ts';
+import { createCoordinator } from '../core/runner/coordinator.ts';
+import { createWdioWorkerFactory } from '../core/runner/worker.ts';
 
 const root = resolve(import.meta.dirname, '..');
 const open = process.argv.includes('--open');
@@ -10,7 +12,8 @@ if (!lock.acquired) {
   console.error(`A local host is already running (pid ${lock.owner?.pid ?? 'unknown'}).`);
   process.exitCode = 1;
 } else {
-  const server = await createApiServer({ port: 8127, mode: 'serve', root, staticDir: resolve(root, 'dist') });
+  const coordinator = createCoordinator({ root, workerFactory: createWdioWorkerFactory(root) });
+  const server = await createApiServer({ port: 8127, mode: 'serve', root, staticDir: resolve(root, 'dist'), coordinator });
   console.log(`HotWax POS Testing is running at ${server.url}`);
   if (open) {
     const child = spawn('open', [server.url], { stdio: 'ignore', detached: true });

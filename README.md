@@ -10,11 +10,11 @@ Appium/WDA test runner, OMS reads, local run history and safety checks. Shopify
 POS stays the unmodified App Store app. Only the separate open-source
 WebDriverAgent (WDA) helper is built and signed.
 
-**Status: the standalone localhost shell and read-only script catalog are now
-implemented. The scripted Home → Orders → first order test has also passed on a
-real iPad.** The native test reads accessibility identifiers and order text
-through WDA; it does not need Device Hub, image recognition, Shopify source
-code or Shopify POS binaries.
+**Status: the standalone localhost shell, setup wizard, read-only script catalog
+and run-history UI are implemented.** The scripted Home → Orders → first order
+test has passed on a real iPad. The native test reads accessibility identifiers
+and order text through WDA; it does not need Device Hub, image recognition,
+Shopify source code or Shopify POS binaries.
 
 ## Start the application
 
@@ -41,11 +41,12 @@ The normal teammate workflow is `./run.sh` from this repository's root:
    local app when needed, starts the single localhost process and opens the
    browser. Press **Control+C** in that same Terminal window to stop it.
 
-7. In the browser, use **Get setup** to review readiness, **Scripts** to browse
-   the checked-in catalog, and **Run history** to review accepted runs. The
-   current shell slice exposes the read-only script catalog; device execution,
-   OMS browsing and transaction workflows are added only after their safety
-   checks are implemented.
+7. In the browser, use **Get setup** to save an iPad/signing profile and run
+   read-only readiness checks, **Scripts** to browse and launch checked-in
+   scripts, and **Run history** to review accepted runs. The first GUI script
+   is deliberately read-only: it opens the first existing POS order and checks
+   its detail reference. OMS browsing and transaction workflows are added only
+   after their separate safety checks are implemented.
 
 Do not start AccxUI, a separate frontend, a separate backend, or a manually
 started Appium server for the finished toolkit. Xcode, iPad trust/signing,
@@ -98,7 +99,13 @@ npm run start
 npm run doctor
 npm run test:orders
 npm run test:script -- --id pos.open-first-order
+npm run dev
 ```
+
+`npm run dev` is for maintainers who want Vite hot reload. It starts the local
+Node API sidecar on port 8128 and the browser UI on port 8127. Teammates should
+normally use `./run.sh`, which builds stale UI assets and starts the one local
+host on port 8127.
 
 The test begins with POS already on Home, no blocking dialog and at
 least one order in the current Orders list. It preserves filters/sort, opens the

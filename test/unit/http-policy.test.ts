@@ -58,3 +58,20 @@ test('rejects hostile origins and unknown API paths', async () => {
     assert.equal(unknown.status, 404);
   });
 });
+
+test('exposes setup profiles and empty run history through the authenticated local API', async () => {
+  await withServer(async url => {
+    const port = new URL(url).port;
+    const health = await fetch(`${url}/api/health`, { headers: { Host: `127.0.0.1:${port}` } });
+    const { sessionToken } = await health.json() as { sessionToken: string };
+    const headers = { Host: `127.0.0.1:${port}`, 'X-Local-Session': sessionToken };
+
+    const profiles = await fetch(`${url}/api/setup/profiles`, { headers });
+    assert.equal(profiles.status, 200);
+    assert.deepEqual((await profiles.json() as { profiles: unknown[] }).profiles, []);
+
+    const runs = await fetch(`${url}/api/runs`, { headers });
+    assert.equal(runs.status, 200);
+    assert.ok(Array.isArray((await runs.json() as { runs: unknown[] }).runs));
+  });
+});
