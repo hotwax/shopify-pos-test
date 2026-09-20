@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Page } from '../../shared/contracts.ts';
+import { buildOmsOrigin, normalizeOmsInstanceName } from '../../shared/oms-origin.ts';
 import { OmsSessionStore, type FetchLike } from './auth.ts';
 import { assertNamedReadQuery, listLocationsQuery, resolveOrderQuery, searchOrdersQuery, searchVariantsQuery, type NamedReadOperation } from './queries/documents.ts';
 import { OmsError, boundedCursor, boundedSearch, canonicalOrigin, type OmsConnectionConfig, type OmsConnectionDraft, type OmsConnectionSummary, type OmsLocation, type OmsOrder, type OmsOrderDetail, type OmsOrderItem, type OmsOrderRecord, type OmsService, type OmsShop, type OmsShopifyOrderAgreement, type OmsShopifyOrderAgreementSale, type OmsShopifyOrderDetail, type OmsShopifyOrderLine, type OmsShopifyOrderTransaction, type OmsVariant } from './types.ts';
@@ -240,9 +241,11 @@ export class OmsClient implements OmsService {
   }
 
   addConnection(draft: OmsConnectionDraft): OmsConnectionSummary {
-    const origin = canonicalOrigin(draft.origin);
-    const label = draft.label.trim() || new URL(origin).hostname;
-    if (label.length > 120) throw new OmsError('configuration', 'The OMS instance name is too long.');
+    let instanceName: string;
+    try { instanceName = normalizeOmsInstanceName(draft.instanceName); }
+    catch (error) { throw new OmsError('configuration', error instanceof Error ? error.message : 'The OMS instance name is invalid.'); }
+    const origin = buildOmsOrigin(instanceName);
+    const label = instanceName;
     const existing = [...this.connectionsById.values()].find(connection => connection.origin === origin);
     if (existing) return { ...existing, ...this.sessions.status(existing.id) };
     const connection: OmsConnectionConfig = { id: `oms-${randomUUID().replaceAll('-', '')}`, label, origin };

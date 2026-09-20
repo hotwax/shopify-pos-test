@@ -12,21 +12,21 @@ class MemoryStorage implements Storage {
   setItem(key: string, value: string): void { this.values.set(key, value); }
 }
 
-test('stores recent OMS names and origins without credentials, newest first and deduplicated', () => {
+test('stores recent OMS instance names without credentials, newest first and deduplicated', () => {
   const storage = new MemoryStorage();
-  rememberRecentOmsConnection({ label: 'QA OMS', origin: 'https://qa.example' }, storage);
-  rememberRecentOmsConnection({ label: 'Production-looking name', origin: 'https://qa.example/' }, storage);
-  rememberRecentOmsConnection({ label: 'Dev OMS', origin: 'https://dev.example' }, storage);
+  rememberRecentOmsConnection({ instanceName: 'QA-OMS' }, storage);
+  rememberRecentOmsConnection({ instanceName: 'qa-oms' }, storage);
+  rememberRecentOmsConnection({ instanceName: 'Dev-OMS' }, storage);
 
   assert.deepEqual(readRecentOmsConnections(storage), [
-    { label: 'Dev OMS', origin: 'https://dev.example' },
-    { label: 'Production-looking name', origin: 'https://qa.example' },
+    { instanceName: 'dev-oms' },
+    { instanceName: 'qa-oms' },
   ]);
-  assert.doesNotMatch(storage.getItem('hotwax-ios-testing.recent-oms') ?? '', /password|token|secret/i);
+  assert.doesNotMatch(storage.getItem('hotwax-ios-testing.recent-oms') ?? '', /password|token|secret|https?:/i);
 });
 
 test('ignores malformed stored recent OMS entries', () => {
   const storage = new MemoryStorage();
-  storage.setItem('hotwax-ios-testing.recent-oms', JSON.stringify([{ label: 'Missing origin' }, { label: 'Valid', origin: 'https://valid.example' }, 'bad']));
-  assert.deepEqual(readRecentOmsConnections(storage), [{ label: 'Valid', origin: 'https://valid.example' }]);
+  storage.setItem('hotwax-ios-testing.recent-oms', JSON.stringify([{ instanceName: 'bad_name' }, { instanceName: 'valid' }, { origin: 'https://legacy.hotwax.io' }, 'bad']));
+  assert.deepEqual(readRecentOmsConnections(storage), [{ instanceName: 'valid' }, { instanceName: 'legacy' }]);
 });

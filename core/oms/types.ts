@@ -7,8 +7,7 @@ export interface OmsConnectionConfig {
 }
 
 export interface OmsConnectionDraft {
-  label: string;
-  origin: string;
+  instanceName: string;
 }
 
 export interface OmsConnectionSummary extends OmsConnectionConfig {

@@ -82,9 +82,9 @@ the supported workflow.
    `xcrun devicectl list devices` lists the devices. Never use `auto`.
    OMS is configured from the **Connections** page in the running app: enter a
    HotWax instance name (for example `test-maarg`) and your credentials. The
-   app derives `https://test-maarg.hotwax.io` for you. `OMS_ORIGIN` in `.env`
-   is optional and only preloads one backwards-compatible local connection;
-   it is not required for teammates.
+   app derives `https://test-maarg.hotwax.io` for you. `OMS_INSTANCE_NAME` in
+   `.env` is optional and only preloads one local connection; it is not
+   required for teammates. Never enter an OMS URL in `.env` or the UI.
 5. Run `npm run doctor`. It reads host/device/signing state; it does not change
    settings, create certificates or install apps. A pass is a prerequisite
    check, not proof that WDA is provisioned or that POS automation works.
@@ -115,9 +115,10 @@ export keys, passwords, profiles or Shopify credentials into this project. The
 OMS page supports the verified BASIC login mode and named, read-only shop,
 variant, Shopify order/location, and OMS order/detail reads. The sidecar keeps
 the bearer token in memory until logout or restart; it does not persist the
-password or token. The page stores only recently used OMS names and HTTPS
-origins in browser local storage so a teammate can return to an instance
-without retyping its URL. No arbitrary GraphQL text, Shopify mutation or POS
+password or token. The page stores only recently used OMS instance names in
+browser local storage and reconstructs their HTTPS origins when selected, so a
+teammate can return to an instance without retyping its URL. No arbitrary
+GraphQL text, Shopify mutation or POS
 transaction workflow is exposed yet.
 
 Mutation policy is deliberately separate from OMS login. A maintainer must

@@ -4,7 +4,7 @@ import { loadCatalog } from '../core/catalog/load.ts';
 import { listDevices, runSetupChecks } from '../core/setup/checks.ts';
 import { loadDeviceProfiles, saveDeviceProfile } from '../core/storage/profiles.ts';
 import { createRunStorage } from '../core/storage/runs.ts';
-import { OmsError, canonicalOrigin, type OmsService } from '../core/oms/types.ts';
+import { OmsError, type OmsService } from '../core/oms/types.ts';
 import type { DeviceProfile, RunRequest } from '../shared/contracts.ts';
 import type { RunCoordinator } from '../core/runner/coordinator.ts';
 import { createLocalSession, sessionMatches, type LaunchMode } from './session.ts';
@@ -99,10 +99,10 @@ function boundedText(value: unknown, max: number): value is string {
 
 function validConnectionId(value: unknown): value is string { return boundedText(value, 80) && /^[a-zA-Z0-9_-]+$/.test(value); }
 
-function validConnectionDraft(value: unknown): value is { label: string; origin: string } {
+function validConnectionDraft(value: unknown): value is { instanceName: string } {
   if (!value || typeof value !== 'object') return false;
   const body = value as Record<string, unknown>;
-  return boundedText(body.label, 120) && boundedText(body.origin, 256) && !!body.label.trim() && !!body.origin.trim();
+  return Object.keys(body).every(key => key === 'instanceName') && boundedText(body.instanceName, 64) && !!body.instanceName.trim();
 }
 
 function validShopRead(value: unknown): value is { connectionId: string; shopId: string; search?: string; cursor?: string } {
@@ -183,13 +183,11 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
           if (request.method === 'POST' && url.pathname === '/api/oms/connections') {
             const body = await readBody(request);
             if (!validConnectionDraft(body) || !options.oms.addConnection) {
-              sendJson(response, 400, { ok: false, error: 'A named HTTPS OMS origin is required.' });
+              sendJson(response, 400, { ok: false, error: 'A valid HotWax instance name is required.' });
               return;
             }
-            let origin: string;
-            try { origin = canonicalOrigin(body.origin); }
-            catch (error) { sendJson(response, 400, { ok: false, error: error instanceof OmsError ? error.message : 'The OMS origin is invalid.' }); return; }
-            sendJson(response, 201, { connection: options.oms.addConnection({ label: body.label.trim(), origin }) });
+            try { sendJson(response, 201, { connection: options.oms.addConnection({ instanceName: body.instanceName.trim() }) }); }
+            catch (error) { sendOmsError(response, error); }
             return;
           }
           if (request.method === 'GET' && url.pathname === '/api/oms/health') {

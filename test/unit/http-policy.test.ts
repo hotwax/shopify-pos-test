@@ -82,7 +82,7 @@ test('exposes setup profiles and empty run history through the authenticated loc
   });
 });
 
-test('lets the UI add an HTTPS OMS instance without an OMS environment variable', async () => {
+test('lets the UI add an OMS instance by name without accepting a caller-supplied URL', async () => {
   const oms = new OmsClient([]);
   const server = await createApiServer({ port: 0, mode: 'test', root: process.cwd(), oms });
   try {
@@ -91,12 +91,12 @@ test('lets the UI add an HTTPS OMS instance without an OMS environment variable'
     const add = await fetch(`${server.url}/api/oms/connections`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ label: 'Test Maarg', origin: 'https://test-maarg.hotwax.io/' }),
+      body: JSON.stringify({ instanceName: ' Test-Maarg ' }),
     });
     assert.equal(add.status, 201);
     const added = await add.json() as { connection: { id: string; label: string; origin: string; state: string } };
     assert.match(added.connection.id, /^[a-zA-Z0-9_-]+$/);
-    assert.equal(added.connection.label, 'Test Maarg');
+    assert.equal(added.connection.label, 'test-maarg');
     assert.equal(added.connection.origin, 'https://test-maarg.hotwax.io');
     assert.equal(added.connection.state, 'configured');
     assert.doesNotMatch(JSON.stringify(added), /password|token/i);
@@ -105,12 +105,12 @@ test('lets the UI add an HTTPS OMS instance without an OMS environment variable'
     assert.equal(listed.status, 200);
     assert.deepEqual((await listed.json() as { connections: { origin: string }[] }).connections.map(item => item.origin), ['https://test-maarg.hotwax.io']);
 
-    const unsafe = await fetch(`${server.url}/api/oms/connections`, {
+    const callerSuppliedOrigin = await fetch(`${server.url}/api/oms/connections`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ label: 'Unsafe', origin: 'http://test-maarg.hotwax.io' }),
+      body: JSON.stringify({ instanceName: 'test-maarg', origin: 'https://attacker.example' }),
     });
-    assert.equal(unsafe.status, 400);
+    assert.equal(callerSuppliedOrigin.status, 400);
   } finally {
     await server.close();
   }

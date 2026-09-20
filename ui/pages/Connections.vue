@@ -33,8 +33,8 @@
         <ion-card-header><ion-card-title>Recent OMS instances</ion-card-title></ion-card-header>
         <ion-card-content>
           <ion-list>
-            <ion-item v-for="recent in recentConnections" :key="recent.origin" button detail="false" @click="selectRecent(recent)">
-              <ion-label><strong>{{ recent.label }}</strong><p>{{ recent.origin }}</p></ion-label>
+            <ion-item v-for="recent in recentConnections" :key="recent.instanceName" button detail="false" @click="selectRecent(recent)">
+              <ion-label><strong>{{ recent.instanceName }}</strong><p>{{ recentOrigin(recent.instanceName) }}</p></ion-label>
               <ion-button slot="end" fill="outline" @click.stop="selectRecent(recent)">Use</ion-button>
             </ion-item>
           </ion-list>
@@ -220,15 +220,16 @@ function selectShopifyOrder(item: OmsOrder | undefined): void {
 
 async function refreshConnections() { loading.value = true; error.value = ''; try { connections.value = (await getOmsConnections()).connections; const connected = connections.value.find(connection => connection.state === 'connected'); if (!activeConnectionId.value || !connections.value.some(connection => connection.id === activeConnectionId.value)) activeConnectionId.value = connected?.id ?? ''; } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Could not read OMS connections.'; } finally { loading.value = false; } }
 function formatDate(value: string): string { const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleString() : 'Unknown'; }
-function selectRecent(recent: RecentOmsConnection): void { instanceName.value = instanceNameFromOrigin(recent.origin) || recent.label; username.value = ''; password.value = ''; }
+function recentOrigin(recentInstanceName: string): string { try { return buildOmsOrigin(recentInstanceName); } catch { return ''; } }
+function selectRecent(recent: RecentOmsConnection): void { instanceName.value = recent.instanceName; username.value = ''; password.value = ''; }
 async function connect() {
   busy.value = true; error.value = '';
   try {
     const normalizedInstanceName = instanceNameFromOrigin(connectionOrigin.value);
     if (!normalizedInstanceName) throw new Error('Enter a valid HotWax instance name.');
-    const added = await addOmsConnection(normalizedInstanceName, connectionOrigin.value);
+    const added = await addOmsConnection(normalizedInstanceName);
     const loggedIn = await loginOms(added.connection.id, username.value, password.value);
-    rememberRecentOmsConnection({ label: loggedIn.connection.label, origin: loggedIn.connection.origin });
+    rememberRecentOmsConnection({ instanceName: normalizedInstanceName });
     recentConnections.value = readRecentOmsConnections();
     instanceName.value = instanceNameFromOrigin(loggedIn.connection.origin) || loggedIn.connection.label;
     username.value = ''; password.value = '';
