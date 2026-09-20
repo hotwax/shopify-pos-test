@@ -1,6 +1,6 @@
 # iosTesting: Shopify POS orders smoke test
 
-Status: design proposed for review; framework and test not installed yet.
+Status: design approved by Aditya; implementation planning in progress.
 
 ## Goal
 
