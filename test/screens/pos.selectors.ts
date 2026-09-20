@@ -12,7 +12,7 @@ export const productSearchField = '-ios predicate string:type == "XCUIElementTyp
 // Observed in the order-detail accessibility tree. This is diagnostic-only;
 // mutation workflows must still prove the current action surface and all
 // post-action readback before they can be registered.
-export const returnOrExchangeAction = '-ios predicate string:type == "XCUIElementTypeOther" AND name == "Return or exchange"';
+export const returnOrExchangeAction = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Return or exchange"';
 export const homeTab = '~Component.AppNavigation.BottomTabs.Home';
 export const ordersTab = '~Component.AppNavigation.BottomTabs.Orders';
 export const ordersScreen = '~Screen.OrdersScreen';
