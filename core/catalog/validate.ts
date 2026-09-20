@@ -27,5 +27,5 @@ export function validateScript(input: unknown, registry: ScenarioDescriptor[]): 
   if (!validateParameters(script.parameters)) {
     throw new Error(`Invalid parameters for ${script.scenario}: ${formatErrors(validateParameters)}`);
   }
-  return structuredClone(script);
+  return structuredClone({ ...script, effect: descriptor.effect });
 }

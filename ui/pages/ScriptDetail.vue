@@ -6,9 +6,9 @@
         <ion-card-header><ion-card-title>{{ script.name }}</ion-card-title></ion-card-header>
         <ion-card-content>
           <p>{{ script.description }}</p><p><ion-chip v-for="tag in script.tags" :key="tag">{{ tag }}</ion-chip></p>
-          <ion-note color="warning"><p>This slice can run only the named read-only smoke script. It does not create orders or change Shopify data.</p></ion-note>
+          <ion-note :color="script.effect === 'read-only' ? 'success' : 'warning'"><p v-if="script.effect === 'read-only'">This is a read-only native smoke. It does not create orders or change Shopify data.</p><p v-else>This workflow is registered as a {{ script.effect }} action, but mutation execution is blocked until native POS context, selectors and test-store approval are verified.</p></ion-note>
           <ion-item><ion-label>Device profile</ion-label><ion-select v-model="profileId" aria-label="Device profile" placeholder="Select a saved profile"><ion-select-option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.id }} · {{ profile.udid }}</ion-select-option></ion-select></ion-item>
-          <ion-button @click="run" :disabled="starting || !profileId">{{ starting ? 'Starting…' : 'Run read-only script' }}</ion-button>
+          <ion-button @click="run" :disabled="starting || !profileId || script.effect !== 'read-only'">{{ starting ? 'Starting…' : script.effect === 'read-only' ? 'Run read-only script' : 'Unavailable until mutation gate passes' }}</ion-button>
           <ion-text color="danger" v-if="error"><p role="alert">{{ error }}</p></ion-text>
         </ion-card-content>
       </ion-card>

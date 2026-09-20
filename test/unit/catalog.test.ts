@@ -23,6 +23,7 @@ const smoke: ScriptDefinition = {
 
 test('accepts a registered read-only catalog definition', () => {
   assert.equal(validateScript(smoke, registry).id, 'pos.open-first-order');
+  assert.equal(validateScript(smoke, registry).effect, 'read-only');
 });
 
 for (const [label, value] of [

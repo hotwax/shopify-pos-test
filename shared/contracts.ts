@@ -29,6 +29,8 @@ export interface ScriptDefinition {
   parameters: Record<string, unknown>;
   assertionMode: AssertionMode;
   tags: string[];
+  /** Derived from the trusted scenario registry; never accepted from JSON. */
+  effect?: Effect;
 }
 
 export interface ScenarioDescriptor {
