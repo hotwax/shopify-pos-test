@@ -17,6 +17,7 @@ export const homeTab = '~Component.AppNavigation.BottomTabs.Home';
 export const ordersTab = '~Component.AppNavigation.BottomTabs.Orders';
 export const moreTab = '~Component.AppNavigation.BottomTabs.More';
 export const moreScreen = '~Screen.More.IndexScreen';
+export const moreHeader = '~Component.AppNavigation.MoreMenu.Header';
 export const settingsMenu = '-ios predicate string:type == "XCUIElementTypeOther" AND name == "Screen.More.IndexScreen.NavListContent.Item.Component.AppNavigation.MoreMenu.Settings"';
 export const settingsScreen = '~Screen.Settings';
 export const settingsLocationItem = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Screen.Settings.LocationsItem"';

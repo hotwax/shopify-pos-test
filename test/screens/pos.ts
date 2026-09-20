@@ -26,6 +26,24 @@ export type PosCartState = {
   empty: boolean;
 };
 
+export interface PosStoreContext {
+  storeName: string;
+  locationName: string;
+  plan: string;
+}
+
+/**
+ * Parses the observed More-menu header while deliberately dropping the staff
+ * name. New or localized formats must be inspected before they are accepted.
+ */
+export function parseStoreContextLabel(label: string | null): PosStoreContext {
+  const match = /^(?:[^,\r\n]+),\s+([^,\r\n]+),\s+([^,\r\n]+),\s+([^,\r\n]+)$/.exec(label?.trim() ?? '');
+  if (!match || !match[1]?.trim() || !match[2]?.trim() || !match[3]?.trim()) {
+    throw new Error('Cannot read an unambiguous POS store context from the More-menu header; inspect this POS version.');
+  }
+  return { storeName: match[1].trim(), locationName: match[2].trim(), plan: match[3].trim() };
+}
+
 async function readNativeState(element: WebdriverIO.Element): Promise<{ exists: boolean; displayed: boolean; enabled: boolean; hittable: string | null }> {
   const exists = await element.isExisting();
   if (!exists) return { exists: false, displayed: false, enabled: false, hittable: null };
@@ -45,6 +63,16 @@ export const pos = {
       throw new Error('Start on Shopify POS Home, with no dialog or order detail open.');
     }
     await requireTouchable(home, 'POS Home is blocked; dismiss the overlay yourself.');
+  },
+
+  async readStoreContext(): Promise<PosStoreContext> {
+    await requireNoAlert();
+    const visible = [];
+    for (const candidate of await browser.$$(s.moreHeader).getElements()) {
+      if (await candidate.isDisplayed()) visible.push(candidate);
+    }
+    if (visible.length !== 1) throw new Error('The current POS More menu did not expose exactly one visible store-context header.');
+    return parseStoreContextLabel(await visible[0].getAttribute('label'));
   },
 
   async readCartState(): Promise<PosCartState> {

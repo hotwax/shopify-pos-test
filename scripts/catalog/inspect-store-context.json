@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.inspect-store-context",
+  "name": "Inspect POS store context",
+  "description": "Read the visible Shopify POS store, location and plan from More, then return to Home without changing settings or store data.",
+  "domain": "shopify-pos",
+  "scenario": "pos.inspect-store-context",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["diagnostic", "read-only", "context", "store"]
+}

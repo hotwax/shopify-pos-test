@@ -145,6 +145,7 @@ npm run test:inspect-order-actions
 npm run test:inspect-return-surface
 npm run test:return-home
 npm run test:inspect-location
+npm run test:inspect-store-context
 npm run test:script -- --id pos.open-first-order
 npm run dev
 ```

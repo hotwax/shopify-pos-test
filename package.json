@@ -24,6 +24,7 @@
     "test:inspect-return-surface": "node --import tsx scripts/run-test.ts --id pos.inspect-return-surface",
     "test:return-home": "node --import tsx scripts/run-test.ts --id pos.navigate-home",
     "test:inspect-location": "node --import tsx scripts/run-test.ts --id pos.inspect-location",
+    "test:inspect-store-context": "node --import tsx scripts/run-test.ts --id pos.inspect-store-context",
     "test:script": "node --import tsx scripts/run-test.ts"
   },
   "devDependencies": {

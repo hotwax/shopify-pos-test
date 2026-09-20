@@ -10,6 +10,7 @@ Updated: 2026-09-20.
 | Shopify POS | 11.14.0 (505086) | Read-only selectors verified |
 | WDA/Appium | WDA 16.12.9, Appium 3.7.0, XCUITest 12.12.6 | Fresh read-only native diagnostics pass when the iPad is unlocked; the runner fails closed when it is locked and never changes device security or automation settings |
 | POS smoke | Home → Orders → first row → matching detail | Passed on physical iPad |
+| POS store-context diagnostic | Observed More-menu header format exposes store, location and plan; parser drops staff identity | Implemented and unit-tested; current live rerun awaits the RemoteXPC tunnel |
 | OMS login | `test-maarg.hotwax.io`, BASIC login | Live contract observed; credentials remain runtime-only |
 | OMS profile/permissions | Profile and permissions routes returned HTTP 200 | Live contract observed |
 | OMS Shopify shops | Authenticated shop list returned two records | Live contract observed; field projection required |

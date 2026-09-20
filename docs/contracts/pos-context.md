@@ -16,6 +16,9 @@ Observed: 2026-09-20 on the configured physical iPad.
   passed after returning POS to Home.
 - The read-only More → Settings → Locations observation reported `Brooklyn`
   and returned POS to Home without changing the location or other store data.
+- A privacy-safe `pos.inspect-store-context` diagnostic is implemented to read
+  the observed More-menu store, location and plan header while discarding the
+  staff name. Its current live rerun is pending the host RemoteXPC tunnel.
 
 The test used accessibility identifiers, predicates and native element labels.
 It did not use pixel coordinates, image recognition, Device Hub, Shopify source
