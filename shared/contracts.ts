@@ -116,6 +116,12 @@ export interface SetupCheck {
   actions: string[];
 }
 
+export interface MutationReadiness {
+  enabled: boolean;
+  policyTargetCount: number;
+  reasons: string[];
+}
+
 export interface Page<T> {
   items: T[];
   nextCursor: string | null;

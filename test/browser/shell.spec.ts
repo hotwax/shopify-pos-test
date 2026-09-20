@@ -19,7 +19,7 @@ test('built localhost shell serves the SPA and its catalog API', async () => {
     assert.equal(spaRoute.status, 200);
     assert.match(await spaRoute.text(), /<div id="app"><\/div>/);
 
-    for (const route of ['/setup', '/scripts/pos.open-first-order', '/scripts/pos.inspect-screen', '/connections', '/runs']) {
+    for (const route of ['/setup', '/scripts/pos.open-first-order', '/scripts/pos.inspect-screen', '/pos', '/connections', '/runs']) {
       const page = await fetch(`${server.url}${route}`, { headers: { Host: `127.0.0.1:${server.port}` } });
       assert.equal(page.status, 200, route);
       assert.match(await page.text(), /<div id="app"><\/div>/, route);
@@ -36,6 +36,12 @@ test('built localhost shell serves the SPA and its catalog API', async () => {
     });
     assert.equal(profiles.status, 200);
     assert.deepEqual((await profiles.json() as { profiles: unknown[] }).profiles, []);
+
+    const readiness = await fetch(`${server.url}/api/pos/mutation-readiness`, {
+      headers: { Host: `127.0.0.1:${server.port}`, 'X-Local-Session': server.sessionToken },
+    });
+    assert.equal(readiness.status, 200);
+    assert.equal((await readiness.json() as { enabled: boolean }).enabled, false);
 
     const runs = await fetch(`${server.url}/api/runs`, {
       headers: { Host: `127.0.0.1:${server.port}`, 'X-Local-Session': server.sessionToken },

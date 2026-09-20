@@ -10,6 +10,8 @@ import type { RunCoordinator } from '../core/runner/coordinator.ts';
 import { createLocalSession, sessionMatches, type LaunchMode } from './session.ts';
 import { sendJson, sendText } from './routes.ts';
 import { serveStatic } from './static.ts';
+import { isValidTargetContext } from '../core/safety/environment.ts';
+import { readMutationReadiness } from '../core/safety/readiness.ts';
 
 export interface ApiServerOptions {
   port: number;
@@ -82,7 +84,8 @@ function validRunRequest(value: unknown): value is RunRequest {
   const request = value as Partial<RunRequest>;
   return typeof request.scriptId === 'string' && typeof request.deviceProfileId === 'string' &&
     typeof request.assertionMode === 'string' && typeof request.expectedRevision === 'string' &&
-    !!request.parameters && typeof request.parameters === 'object';
+    !!request.parameters && typeof request.parameters === 'object' &&
+    (request.context === undefined || isValidTargetContext(request.context));
 }
 
 function boundedText(value: unknown, max: number): value is string {
@@ -232,6 +235,10 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
         sendJson(response, 200, { profiles: await loadDeviceProfiles(options.root) });
         return;
       }
+      if (request.method === 'GET' && url.pathname === '/api/pos/mutation-readiness') {
+        sendJson(response, 200, await readMutationReadiness(options.root));
+        return;
+      }
       if (request.method === 'POST' && url.pathname === '/api/setup/check') {
         try {
           const body = await readBody(request);
@@ -295,7 +302,12 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
         if (!options.coordinator) { sendJson(response, 503, { ok: false, error: 'Run coordinator is unavailable.' }); return; }
         try {
           const body = await readBody(request);
-          if (!validRunRequest(body)) { sendJson(response, 400, { ok: false, error: 'A valid named script run request is required.' }); return; }
+          if (!validRunRequest(body)) {
+            if (body && typeof body === 'object' && 'context' in body && !isValidTargetContext((body as Record<string, unknown>).context)) {
+              sendJson(response, 400, { ok: false, error: 'The frozen target context is invalid. Select an HTTPS OMS origin, exact shop and location GIDs, and API version.' });
+            } else sendJson(response, 400, { ok: false, error: 'A valid named script run request is required.' });
+            return;
+          }
           if (body.expectedRevision.length > 100 || body.scriptId.length > 100 || body.deviceProfileId.length > 100) { sendJson(response, 400, { ok: false, error: 'Run request is too large.' }); return; }
           sendJson(response, 202, await options.coordinator.startRun(body));
         } catch (error) { sendJson(response, 400, { ok: false, error: error instanceof Error ? error.message : 'Run could not be started.' }); }

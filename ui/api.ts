@@ -1,4 +1,4 @@
-import type { DeviceProfile, OmsConnectionSummary, OmsLocation, OmsOrder, OmsOrderDetail, OmsOrderRecord, OmsShop, OmsShopifyOrderDetail, OmsVariant, RunRecord, ScriptDefinition, SetupCheck } from '../shared/contracts.ts';
+import type { DeviceProfile, MutationReadiness, OmsConnectionSummary, OmsLocation, OmsOrder, OmsOrderDetail, OmsOrderRecord, OmsShop, OmsShopifyOrderDetail, OmsVariant, RunRecord, RunRequest, ScriptDefinition, SetupCheck } from '../shared/contracts.ts';
 
 let sessionToken: string | null = null;
 
@@ -57,9 +57,14 @@ export async function getRun(id: string): Promise<RunRecord> {
   return request(`/api/runs/${encodeURIComponent(id)}`);
 }
 
-export async function startRun(requestBody: { scriptId: string; deviceProfileId: string; parameters: Record<string, unknown>; assertionMode: string; expectedRevision: string }): Promise<RunRecord> {
+export async function startRun(requestBody: Pick<RunRequest, 'scriptId' | 'deviceProfileId' | 'parameters' | 'assertionMode' | 'expectedRevision'> & Partial<Pick<RunRequest, 'context'>>): Promise<RunRecord> {
   if (!sessionToken) await getHealth();
   return request('/api/runs/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
+}
+
+export async function getMutationReadiness(): Promise<MutationReadiness> {
+  if (!sessionToken) await getHealth();
+  return request('/api/pos/mutation-readiness');
 }
 
 export async function requestStop(id: string): Promise<void> {

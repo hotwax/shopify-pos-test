@@ -151,3 +151,44 @@ test('approval endpoint does not expose filesystem errors and requires a pending
     await server.close();
   }
 });
+
+test('run requests reject a partial or unsafe frozen target context', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-http-context-'));
+  const server = await createApiServer({ port: 0, mode: 'test', root, coordinator: createCoordinator({ root }) });
+  try {
+    const url = server.url;
+    const port = new URL(url).port;
+    const health = await fetch(`${url}/api/health`, { headers: { Host: `127.0.0.1:${port}` } });
+    const { sessionToken, revision } = await health.json() as { sessionToken: string; revision: string };
+    const headers = { Host: `127.0.0.1:${port}`, 'X-Local-Session': sessionToken, 'Content-Type': 'application/json' };
+    const response = await fetch(`${url}/api/runs/start`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        scriptId: 'pos.open-first-order', deviceProfileId: 'test-ipad', parameters: {}, assertionMode: 'pos', expectedRevision: revision,
+        context: { connectionId: 'local', omsOrigin: 'http://unsafe.example', userId: 'user-1', connectorShopId: 'shop-1', shopGid: 'gid://shopify/Shop/1', shopDomain: 'test.myshopify.com', locationGid: 'gid://shopify/Location/1', apiVersion: '2026-01' },
+      }),
+    });
+    assert.equal(response.status, 400);
+    assert.match((await response.json() as { error: string }).error, /context|HTTPS|origin/i);
+  } finally {
+    await server.close();
+  }
+});
+
+test('exposes mutation readiness without claiming a policy-only store is safe', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-http-readiness-'));
+  const server = await createApiServer({ port: 0, mode: 'test', root });
+  try {
+    const port = new URL(server.url).port;
+    const response = await fetch(`${server.url}/api/pos/mutation-readiness`, {
+      headers: { Host: `127.0.0.1:${port}`, 'X-Local-Session': server.sessionToken },
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as { enabled: boolean; reasons: string[] };
+    assert.equal(body.enabled, false);
+    assert.ok(body.reasons.some(reason => /native POS context/i.test(reason)));
+  } finally {
+    await server.close();
+  }
+});
