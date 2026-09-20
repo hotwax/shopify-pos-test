@@ -16,10 +16,12 @@ export function createWdioWorkerFactory(root: string): WorkerFactory {
     if (!scenario) throw new Error('The selected scenario is unavailable.');
     const appiumPort = await findAvailablePort(4723);
     const wdaLocalPort = await findAvailablePort(8101);
-    const env = makeWorkerEnvironment(profile, runId, artifactDir, appiumPort, wdaLocalPort, resolve(root, '.wda/DerivedData'));
+    const wdaDerivedDataPath = resolve(root, '.runtime', 'runs', runId, 'wda');
+    const env = makeWorkerEnvironment(profile, runId, artifactDir, appiumPort, wdaLocalPort, wdaDerivedDataPath);
     return spawn(resolve(root, 'node_modules/@wdio/cli/bin/wdio.js'), ['run', resolve(root, 'wdio.conf.ts')], {
       cwd: root,
       env: { ...env, WDIO_ENTRY: scenario.entry },
+      cleanupMarkers: ['xcodebuild', wdaDerivedDataPath],
     });
   };
 }

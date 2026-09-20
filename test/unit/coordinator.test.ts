@@ -65,6 +65,23 @@ test('classifies UI-automation authorization as a user-owned blocked preconditio
   assert.equal(result.reason, 'ui-automation-authorization');
 });
 
+test('stops an owned worker promptly when the device lock is observed', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-'));
+  const coordinator = createCoordinator({
+    root,
+    workerFactory: async ({ artifactDir }) => {
+      await writeFile(join(artifactDir, 'wdio-appium.log'), 'Xcode cannot launch WebDriverAgentRunner because the device is locked.');
+      return spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? '' } });
+    },
+  });
+  const startedAt = Date.now();
+  const accepted = await coordinator.startRun(request);
+  await eventually(async () => isTerminalState((await coordinator.getRun(accepted.id)).state));
+  const result = await coordinator.getRun(accepted.id);
+  assert.equal(result.state, 'blocked');
+  assert.ok(Date.now() - startedAt < 2_000);
+});
+
 test('accepts a structured worker result and exposes events to subscribers', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-'));
   const coordinator = createCoordinator({

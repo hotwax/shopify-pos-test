@@ -1,4 +1,4 @@
-import { spawn as spawnProcess, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn as spawnProcess, type ChildProcess } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import { isAbsolute, join } from 'node:path';
@@ -53,10 +53,35 @@ function killGroup(pid: number, signal: NodeJS.Signals): void {
   }
 }
 
-export function spawn(executable: string, args: string[], options: { cwd: string; env: Record<string, string> }): OwnedProcess {
+function matchingProcessIds(markers: string[]): number[] {
+  if (process.platform === 'win32' || !markers.length) return [];
+  try {
+    const output = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8', maxBuffer: 2 * 1024 * 1024 });
+    return output.split('\n').flatMap(line => {
+      const match = /^\s*(\d+)\s+(.*)$/.exec(line);
+      if (!match || !markers.every(marker => match[2].includes(marker))) return [];
+      const pid = Number(match[1]);
+      return Number.isSafeInteger(pid) && pid > 1 && pid !== process.pid ? [pid] : [];
+    });
+  } catch { return []; }
+}
+
+function signalMatchingProcesses(markers: string[], signal: NodeJS.Signals): void {
+  for (const pid of matchingProcessIds(markers)) {
+    try { process.kill(pid, signal); }
+    catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ESRCH' && code !== 'EPERM') throw error;
+    }
+  }
+}
+
+export function spawn(executable: string, args: string[], options: { cwd: string; env: Record<string, string>; cleanupMarkers?: string[] }): OwnedProcess {
   assertSafeExecutable(executable);
   if (!isAbsolute(options.cwd)) throw new Error('Worker cwd must be absolute.');
   if (!Array.isArray(args) || args.some(arg => typeof arg !== 'string' || /\0/.test(arg))) throw new Error('Worker arguments must be a safe string array.');
+  const cleanupMarkers = options.cleanupMarkers ?? [];
+  if (!Array.isArray(cleanupMarkers) || cleanupMarkers.length > 4 || cleanupMarkers.some(marker => typeof marker !== 'string' || !marker || marker.length > 500 || /[\0\r\n]/.test(marker))) throw new Error('Process cleanup markers are invalid.');
   assertSafeEnvironment(options.env);
   const child = spawnProcess(executable, args, {
     cwd: options.cwd,
@@ -76,11 +101,12 @@ export function spawn(executable: string, args: string[], options: { cwd: string
     child,
     isAlive: () => child.exitCode === null && child.signalCode === null,
     async terminate(timeoutMs = 5_000) {
-      if (!this.isAlive()) return;
-      killGroup(pid, 'SIGTERM');
+      if (this.isAlive()) killGroup(pid, 'SIGTERM');
+      signalMatchingProcesses(cleanupMarkers, 'SIGTERM');
       const deadline = Date.now() + timeoutMs;
       while (this.isAlive() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25));
       if (this.isAlive()) killGroup(pid, 'SIGKILL');
+      signalMatchingProcesses(cleanupMarkers, 'SIGKILL');
       outputSize = Math.min(outputSize, 32_768);
     },
   };

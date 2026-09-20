@@ -26,11 +26,12 @@ const revision = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encodi
 const coordinator = createCoordinator({
   root,
   workerFactory: async ({ runId, request, artifactDir }) => {
+    const wdaDerivedDataPath = resolve(root, '.runtime', 'runs', runId, 'wda');
     const env = {
-      ...makeWorkerEnvironment({ id: request.deviceProfileId, ...device }, runId, artifactDir, appiumPort, wdaLocalPort, resolve(root, '.wda/DerivedData')),
+      ...makeWorkerEnvironment({ id: request.deviceProfileId, ...device }, runId, artifactDir, appiumPort, wdaLocalPort, wdaDerivedDataPath),
       WDIO_ENTRY: scenario.entry,
     };
-    return spawn(resolve(root, 'node_modules/@wdio/cli/bin/wdio.js'), ['run', resolve(root, 'wdio.conf.ts')], { cwd: root, env });
+    return spawn(resolve(root, 'node_modules/@wdio/cli/bin/wdio.js'), ['run', resolve(root, 'wdio.conf.ts')], { cwd: root, env, cleanupMarkers: ['xcodebuild', wdaDerivedDataPath] });
   },
 });
 

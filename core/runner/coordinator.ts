@@ -162,7 +162,7 @@ export class RunCoordinator {
       event => this.appendAndNotify(event),
     );
     if (active.stopping) await active.process.terminate();
-    await new Promise<void>(resolve => active.process!.child.once('close', () => resolve()));
+    await this.waitForWorker(active);
     const current = await this.read(running.id);
     if (isTerminalState(current.state)) { await this.finish(running.id); return; }
     let result: { passed: boolean; message?: string } | undefined;
@@ -181,6 +181,33 @@ export class RunCoordinator {
     const current = await this.read(event.runId);
     if (isTerminalState(current.state)) return;
     await this.append(current, event);
+  }
+
+  private async waitForWorker(active: ActiveRun): Promise<void> {
+    const child = active.process?.child;
+    if (!child) return;
+    await new Promise<void>(resolve => {
+      let finished = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        if (timer) clearTimeout(timer);
+        resolve();
+      };
+      child.once('close', finish);
+      const inspect = async () => {
+        if (finished) return;
+        const classification = await classifyWorkerFailure(active.artifactDir);
+        if (classification.state === 'blocked') {
+          await active.process?.terminate().catch(() => undefined);
+          finish();
+          return;
+        }
+        timer = setTimeout(() => { void inspect(); }, 250);
+      };
+      void inspect();
+    });
   }
 
   private async append(record: RunRecord, event: RunEvent): Promise<RunRecord> {
