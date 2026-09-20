@@ -15,8 +15,28 @@ describe('Shopify POS Home navigation utility', () => {
     }
 
     const homeTab = await browser.$(s.homeTab).getElement();
+    let closedSearch = false;
     let closedDetail = false;
-    if (!await homeTab.isDisplayed()) {
+    if (await browser.$(s.searchScreen).isDisplayed()) {
+      const backButtons = await browser.$$(s.searchBackButton);
+      let back: WebdriverIO.Element | undefined;
+      for (const candidate of backButtons) {
+        if (await candidate.isDisplayed()) {
+          back = candidate;
+          break;
+        }
+      }
+      if (!back || !await back.isEnabled() || await back.getAttribute('hittable') !== 'true') {
+        throw new Error('The observed POS Search Back button is unavailable; inspect the current build before changing selectors.');
+      }
+      await back.click();
+      closedSearch = true;
+      await browser.waitUntil(async () => !await browser.$(s.searchScreen).isDisplayed(), {
+        timeout: 20_000,
+        timeoutMsg: 'Shopify POS did not close the read-only Search surface.',
+      });
+    }
+    if (await browser.$(s.detailScreen).isDisplayed() || !await homeTab.isDisplayed()) {
       const close = await browser.$(s.detailCloseButton).getElement();
       if (!await close.isDisplayed() || !await close.isEnabled() || await close.getAttribute('hittable') !== 'true') {
         throw new Error('The observed POS Home tab and order-detail Close button are unavailable; inspect the current build before changing selectors.');
@@ -42,6 +62,6 @@ describe('Shopify POS Home navigation utility', () => {
     await mkdir(artifactDir, { recursive: true });
     await writeFile(join(artifactDir, 'home-navigation.xml'), await browser.getPageSource());
     await browser.saveScreenshot(join(artifactDir, 'home-navigation.png'));
-    await writeFile(join(artifactDir, 'home-navigation.json'), JSON.stringify({ alreadyHome, closedDetail, homeSelected: true }, null, 2));
+    await writeFile(join(artifactDir, 'home-navigation.json'), JSON.stringify({ alreadyHome, closedSearch, closedDetail, homeSelected: true }, null, 2));
   });
 });

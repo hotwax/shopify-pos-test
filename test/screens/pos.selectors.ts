@@ -15,6 +15,11 @@ export const productSearchField = '-ios predicate string:type == "XCUIElementTyp
 export const returnOrExchangeAction = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Return or exchange"';
 export const homeTab = '~Component.AppNavigation.BottomTabs.Home';
 export const ordersTab = '~Component.AppNavigation.BottomTabs.Orders';
+export const moreTab = '~Component.AppNavigation.BottomTabs.More';
+export const moreScreen = '~Screen.More.IndexScreen';
+export const settingsMenu = '-ios predicate string:type == "XCUIElementTypeOther" AND name == "Screen.More.IndexScreen.NavListContent.Item.Component.AppNavigation.MoreMenu.Settings"';
+export const settingsScreen = '~Screen.Settings';
+export const settingsLocationItem = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Screen.Settings.LocationsItem"';
 export const ordersScreen = '~Screen.OrdersScreen';
 export const ordersList = '~Screen.OrdersList';
 export const orderRows = '-ios predicate string:type == "XCUIElementTypeButton" AND name BEGINSWITH "Component.OrdersList.Order."';
@@ -30,6 +35,9 @@ export const emptySearch = '-ios predicate string:type == "XCUIElementTypeStatic
 // Screen.OrderDetailsScreen occurs twice; TopSection.Content is unique.
 export const detailContent = '~Screen.OrderDetailsScreen.TopSection.Content';
 export const detailReference = '~OrderDetailsHeader.Title';
+export const detailScreen = '~Screen.OrderDetailsScreen';
 // Observed on the order-detail modal; this is the native Close button, not a
 // coordinate or a business action.
 export const detailCloseButton = '~Component.ActionBar.PrimaryActionButton';
+export const searchScreen = '~Screen.Search';
+export const searchBackButton = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Component.SearchBar.Text.CancelSearchIconLeft" AND label == "Back"';

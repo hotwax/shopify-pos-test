@@ -128,6 +128,7 @@ npm run test:inspect-product-search
 npm run test:inspect-order-actions
 npm run test:inspect-return-surface
 npm run test:return-home
+npm run test:inspect-location
 npm run test:script -- --id pos.open-first-order
 npm run dev
 ```
@@ -171,9 +172,16 @@ before another run and inspect the local artifact before changing selectors.
 
 `npm run test:return-home` is an explicit navigation utility for that case. It
 selects the observed native Home tab when POS is on another screen, verifies
-the Home screen is selected, and captures a local accessibility snapshot. It
-does not reset, reinstall or relaunch POS, dismiss alerts, change filters, or
-change store data. Business scripts still fail when started away from Home.
+or closes the observed read-only Search/order-detail surface first, then
+captures a local accessibility snapshot. It does not reset, reinstall or
+relaunch POS, dismiss alerts, change filters, or change store data. Business
+scripts still fail when started away from Home.
+
+`npm run test:inspect-location` is a read-only target-context diagnostic. It
+uses the observed More → Settings navigation, records the current
+`Screen.Settings.LocationsItem` label, captures local XML/PNG evidence, and
+returns POS to Home. It does not toggle screen lock, change the location,
+logout, or modify store data.
 
 Only one iPad/worker is used. No app reset, reinstall, forced restart, automatic
 alert acceptance, whole-test retries, checkout, refunds or order modifications.
