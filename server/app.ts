@@ -4,6 +4,7 @@ import { loadCatalog } from '../core/catalog/load.ts';
 import { listDevices, runSetupChecks } from '../core/setup/checks.ts';
 import { loadDeviceProfiles, saveDeviceProfile } from '../core/storage/profiles.ts';
 import { createRunStorage } from '../core/storage/runs.ts';
+import { OmsError, type OmsService } from '../core/oms/types.ts';
 import type { DeviceProfile, RunRequest } from '../shared/contracts.ts';
 import type { RunCoordinator } from '../core/runner/coordinator.ts';
 import { createLocalSession, sessionMatches, type LaunchMode } from './session.ts';
@@ -17,6 +18,7 @@ export interface ApiServerOptions {
   staticDir?: string;
   allowedOrigins?: string[];
   coordinator?: RunCoordinator;
+  oms?: OmsService;
 }
 
 export interface ServerHandle {
@@ -83,6 +85,28 @@ function validRunRequest(value: unknown): value is RunRequest {
     !!request.parameters && typeof request.parameters === 'object';
 }
 
+function boundedText(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.length <= max;
+}
+
+function validConnectionId(value: unknown): value is string { return boundedText(value, 80) && /^[a-zA-Z0-9_-]+$/.test(value); }
+
+function validShopRead(value: unknown): value is { connectionId: string; shopId: string; search?: string; cursor?: string } {
+  if (!value || typeof value !== 'object') return false;
+  const body = value as Record<string, unknown>;
+  return validConnectionId(body.connectionId) && boundedText(body.shopId, 160) &&
+    (body.search === undefined || boundedText(body.search, 200)) && (body.cursor === undefined || boundedText(body.cursor, 512));
+}
+
+function sendOmsError(response: ServerResponse, error: unknown): void {
+  if (error instanceof OmsError) {
+    const status = error.code === 'authentication' ? 401 : error.code === 'authorization' ? 403 : error.code === 'rate-limited' ? 429 : error.code === 'configuration' ? 503 : error.code === 'invalid-data' ? 400 : 502;
+    sendJson(response, status, { ok: false, error: error.message, code: error.code });
+    return;
+  }
+  sendJson(response, 502, { ok: false, error: 'The OMS request failed.' });
+}
+
 export async function createApiServer(options: ApiServerOptions): Promise<ServerHandle> {
   const session = createLocalSession();
   let revision = 'unversioned';
@@ -111,6 +135,57 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
       if (request.method === 'GET' && url.pathname === '/api/setup/devices') {
         try { sendJson(response, 200, { devices: await listDevices() }); }
         catch (error) { sendJson(response, 200, { devices: [], error: error instanceof Error ? error.message : 'Could not list devices.' }); }
+        return;
+      }
+      if (url.pathname.startsWith('/api/oms/')) {
+        if (!options.oms) { sendJson(response, 503, { ok: false, error: 'No OMS connection is configured. Set OMS_ORIGIN in .env.' }); return; }
+        try {
+          if (request.method === 'GET' && url.pathname === '/api/oms/connections') {
+            sendJson(response, 200, { connections: options.oms.connections() });
+            return;
+          }
+          if (request.method === 'POST' && url.pathname === '/api/oms/login') {
+            const body = await readBody(request) as Record<string, unknown>;
+            if (!validConnectionId(body.connectionId) || !boundedText(body.username, 256) || !body.username.trim() || !boundedText(body.password, 256) || !body.password) {
+              sendJson(response, 400, { ok: false, error: 'A connection ID, username and password are required.' });
+              return;
+            }
+            sendJson(response, 200, { connection: await options.oms.login(body.connectionId, { username: body.username, password: body.password }) });
+            return;
+          }
+          if (request.method === 'POST' && url.pathname === '/api/oms/logout') {
+            const body = await readBody(request) as Record<string, unknown>;
+            if (!validConnectionId(body.connectionId)) { sendJson(response, 400, { ok: false, error: 'A valid connection ID is required.' }); return; }
+            await options.oms.logout(body.connectionId);
+            sendJson(response, 200, { ok: true });
+            return;
+          }
+          if (request.method === 'GET' && url.pathname === '/api/oms/shops') {
+            const connectionId = url.searchParams.get('connectionId');
+            if (!validConnectionId(connectionId)) { sendJson(response, 400, { ok: false, error: 'A valid connection ID is required.' }); return; }
+            sendJson(response, 200, { shops: await options.oms.shops(connectionId) });
+            return;
+          }
+          if (request.method === 'POST' && url.pathname === '/api/oms/variants/search') {
+            const body = await readBody(request);
+            if (!validShopRead(body)) { sendJson(response, 400, { ok: false, error: 'A valid connection, shop and bounded search are required.' }); return; }
+            sendJson(response, 200, await options.oms.searchVariants(body.connectionId, body.shopId, { search: body.search ?? '', cursor: body.cursor }));
+            return;
+          }
+          if (request.method === 'POST' && url.pathname === '/api/oms/orders/search') {
+            const body = await readBody(request);
+            if (!validShopRead(body)) { sendJson(response, 400, { ok: false, error: 'A valid connection, shop and bounded search are required.' }); return; }
+            sendJson(response, 200, await options.oms.searchOrders(body.connectionId, body.shopId, { search: body.search ?? '', cursor: body.cursor }));
+            return;
+          }
+          if (request.method === 'POST' && url.pathname === '/api/oms/locations/list') {
+            const body = await readBody(request);
+            if (!validShopRead(body)) { sendJson(response, 400, { ok: false, error: 'A valid connection, shop and bounded search are required.' }); return; }
+            sendJson(response, 200, await options.oms.listLocations(body.connectionId, body.shopId, { cursor: body.cursor }));
+            return;
+          }
+        } catch (error) { sendOmsError(response, error); return; }
+        sendJson(response, 404, { ok: false, error: 'Unknown OMS route.' });
         return;
       }
       if (request.method === 'GET' && url.pathname === '/api/setup/profiles') {

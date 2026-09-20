@@ -103,3 +103,27 @@ export interface Page<T> {
   items: T[];
   nextCursor: string | null;
 }
+
+export interface OmsConnectionSummary {
+  id: string;
+  label: string;
+  origin: string;
+  state: 'configured' | 'connected' | 'expired' | 'error';
+  userId?: string;
+  expiresAt?: string;
+  error?: string;
+}
+
+export interface OmsShop {
+  connectorShopId: string;
+  shopGid: string;
+  shopDomain: string;
+  name: string;
+  locationGid: string | null;
+  currency: string | null;
+  timezone: string | null;
+}
+
+export interface OmsVariant { gid: string; productGid: string; title: string; productTitle: string; sku: string | null; }
+export interface OmsOrder { gid: string; name: string; financialStatus: string | null; fulfillmentStatus: string | null; }
+export interface OmsLocation { gid: string; name: string; }

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createApiServer } from '../../server/app.ts';
+import type { OmsService } from '../../core/oms/types.ts';
 
 async function withServer(run: (url: string) => Promise<void>): Promise<void> {
   const server = await createApiServer({ port: 0, mode: 'test', root: process.cwd() });
@@ -74,4 +75,35 @@ test('exposes setup profiles and empty run history through the authenticated loc
     assert.equal(runs.status, 200);
     assert.ok(Array.isArray((await runs.json() as { runs: unknown[] }).runs));
   });
+});
+
+test('keeps OMS credentials on the localhost sidecar and exposes only named reads', async () => {
+  let receivedPassword = '';
+  const oms: OmsService = {
+    connections: () => [{ id: 'local', label: 'Test OMS', origin: 'https://oms.example', state: 'configured' }],
+    login: async (_id, credentials) => { receivedPassword = credentials.password; return { id: 'local', label: 'Test OMS', origin: 'https://oms.example', state: 'connected', userId: 'user-1' }; },
+    logout: async () => undefined,
+    shops: async () => [{ connectorShopId: 'shop-1', shopGid: 'gid://shopify/Shop/1', shopDomain: 'test.myshopify.com', name: 'Test', locationGid: null, currency: 'USD', timezone: 'UTC' }],
+    searchVariants: async () => ({ items: [], nextCursor: null }),
+    searchOrders: async () => ({ items: [], nextCursor: null }),
+    listLocations: async () => ({ items: [], nextCursor: null }),
+  };
+  const server = await createApiServer({ port: 0, mode: 'test', root: process.cwd(), oms });
+  try {
+    const port = new URL(server.url).port;
+    const headers = { Host: `127.0.0.1:${port}`, 'X-Local-Session': server.sessionToken, 'Content-Type': 'application/json' };
+    const login = await fetch(`${server.url}/api/oms/login`, { method: 'POST', headers, body: JSON.stringify({ connectionId: 'local', username: 'tester', password: 'sidecar-only' }) });
+    assert.equal(login.status, 200);
+    assert.equal(receivedPassword, 'sidecar-only');
+    assert.doesNotMatch(await login.text(), /sidecar-only/);
+
+    const shops = await fetch(`${server.url}/api/oms/shops?connectionId=local`, { headers });
+    assert.equal(shops.status, 200);
+    assert.equal((await shops.json() as { shops: { connectorShopId: string }[] }).shops[0]?.connectorShopId, 'shop-1');
+
+    const arbitrary = await fetch(`${server.url}/api/oms/graphql`, { headers });
+    assert.equal(arbitrary.status, 404);
+  } finally {
+    await server.close();
+  }
 });

@@ -4,6 +4,8 @@ import { createApiServer } from './app.ts';
 import { createLaunchLock } from './session.ts';
 import { createCoordinator } from '../core/runner/coordinator.ts';
 import { createWdioWorkerFactory } from '../core/runner/worker.ts';
+import { OmsClient } from '../core/oms/client.ts';
+import { configuredOmsConnections } from '../core/oms/config.ts';
 
 const root = resolve(import.meta.dirname, '..');
 const open = process.argv.includes('--open');
@@ -13,7 +15,8 @@ if (!lock.acquired) {
   process.exitCode = 1;
 } else {
   const coordinator = createCoordinator({ root, workerFactory: createWdioWorkerFactory(root) });
-  const server = await createApiServer({ port: 8127, mode: 'serve', root, staticDir: resolve(root, 'dist'), coordinator });
+  const oms = new OmsClient(configuredOmsConnections().connections);
+  const server = await createApiServer({ port: 8127, mode: 'serve', root, staticDir: resolve(root, 'dist'), coordinator, oms });
   console.log(`HotWax POS Testing is running at ${server.url}`);
   if (open) {
     const child = spawn('open', [server.url], { stdio: 'ignore', detached: true });

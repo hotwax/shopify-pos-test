@@ -72,6 +72,8 @@ the supported workflow.
 4. Run `npm ci`. Copy `.env.example` to `.env` and fill in the physical iPad
    UDID, Xcode team ID, and your own unique reverse-domain WDA bundle ID.
    `xcrun devicectl list devices` lists the devices. Never use `auto`.
+   For the optional read-only OMS data browser, also set `OMS_ORIGIN` to the
+   approved HTTPS origin and restart the local app after changing `.env`.
 5. Run `npm run doctor`. It reads host/device/signing state; it does not change
    settings, create certificates or install apps. A pass is a prerequisite
    check, not proof that WDA is provisioned or that POS automation works.
@@ -87,7 +89,11 @@ the supported workflow.
 
 The dependencies and driver are project-local; no global Appium installation is
 needed. Each teammate keeps their own `.env` and signing keys outside Git. Do not
-export keys, passwords, profiles or Shopify credentials into this project.
+export keys, passwords, profiles or Shopify credentials into this project. The
+OMS page supports the verified BASIC login mode and read-only shop, variant,
+order and location reads. The sidecar keeps the bearer token in memory until
+logout or restart; it does not persist the password or token. No arbitrary
+GraphQL text, Shopify mutation or transaction workflow is exposed yet.
 
 ## Commands and safety
 
