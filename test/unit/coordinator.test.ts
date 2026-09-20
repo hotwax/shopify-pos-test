@@ -11,6 +11,7 @@ import { isTerminalState } from '../../core/runner/protocol.ts';
 import type { RunRequest } from '../../shared/contracts.ts';
 import { createScenarioContext } from '../../test/support/context.ts';
 import { readWorkerInput } from '../../core/runner/input.ts';
+import { RunBlockedError } from '../../core/runner/guards.ts';
 
 const request: RunRequest = {
   scriptId: 'pos.open-first-order', deviceProfileId: 'test-ipad', parameters: {},
@@ -237,4 +238,17 @@ test('binds the exact sanitized request to the owned worker input file', async (
   const accepted = await coordinator.startRun({ ...request, expectedRevision: 'revision-input', parameters: { marker: 'worker-input' } });
   await eventually(async () => (await coordinator.getRun(accepted.id)).state === 'passed');
   assert.equal(received, true);
+});
+
+test('reduces an owned mutation precondition error to blocked before a device session', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-blocked-'));
+  const coordinator = createCoordinator({
+    root,
+    workerFactory: async () => { throw new RunBlockedError('mutation-readiness', 'Native POS context is not verified.'); },
+  });
+  const accepted = await coordinator.startRun(request);
+  await eventually(async () => (await coordinator.getRun(accepted.id)).state === 'blocked');
+  const result = await coordinator.getRun(accepted.id);
+  assert.equal(result.state, 'blocked');
+  assert.match(result.statusMessage ?? '', /Native POS context/);
 });

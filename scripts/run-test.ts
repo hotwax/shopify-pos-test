@@ -7,6 +7,8 @@ import { findAvailablePort, makeWorkerEnvironment, spawn } from '../core/runner/
 import { isTerminalState } from '../core/runner/protocol.ts';
 import { readDeviceConfig } from '../config/device.ts';
 import { registry } from '../test/scenarios/registry.ts';
+import { readMutationReadiness } from '../core/safety/readiness.ts';
+import { assertScenarioCanRun } from '../core/runner/guards.ts';
 
 const root = resolve(import.meta.dirname, '..');
 dotenv.config({ quiet: true });
@@ -20,6 +22,13 @@ if (!script) throw new Error(`Catalog script is unavailable: ${scriptId}`);
 const scenario = registry.find(candidate => candidate.id === script.scenario);
 if (!scenario) throw new Error(`Scenario is unavailable: ${script.scenario}`);
 const device = readDeviceConfig(process.env);
+assertScenarioCanRun(scenario.effect, {
+  scriptId: script.id,
+  deviceProfileId: device.udid,
+  parameters: script.parameters,
+  assertionMode: script.assertionMode,
+  expectedRevision: 'pending',
+}, await readMutationReadiness(root));
 const appiumPort = await findAvailablePort(4723);
 const wdaLocalPort = await findAvailablePort(8101);
 const revision = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();

@@ -12,6 +12,7 @@ import { approveCheckpoint as writeApproval, clearApprovalRequest, readApprovalR
 import { acknowledgeCommitAttempt, acknowledgeCommitOutcome, clearCommitAttempt, clearCommitOutcome, readCommitAttempt, readCommitOutcome, type CommitAttemptRequest, type CommitOutcomeRequest } from './effects.ts';
 import { clearBridgeRequest, readBridgeRequests, writeBridgeResponse } from './bridge.ts';
 import { writeWorkerInput } from './input.ts';
+import { RunBlockedError } from './guards.ts';
 
 export interface WorkerInput {
   runId: string;
@@ -194,7 +195,10 @@ export class RunCoordinator {
     // reload and observe `preparing`; no test action is inferred from a PID.
     void this.launch(accepted, active, inputFile).catch(async error => {
       const current = await this.storage.get(id).catch(() => accepted);
-      if (!isTerminalState(current.state)) await this.append(current, stateEvent(current, 'failed', { reason: 'worker-start-failed', message: this.safeError(error) }));
+      if (!isTerminalState(current.state)) {
+        const blocked = error instanceof RunBlockedError;
+        await this.append(current, stateEvent(current, blocked ? 'blocked' : 'failed', { reason: blocked ? error.reason : 'worker-start-failed', message: this.safeError(error) }));
+      }
       await this.finish(id);
     });
     return accepted;
