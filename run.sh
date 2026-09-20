@@ -8,8 +8,8 @@ if ! command -v node >/dev/null 2>&1; then
   echo "Node.js is required. Install the supported Node.js LTS release, then run ./run.sh again." >&2
   exit 1
 fi
-if ! node -e "const major=Number(process.versions.node.split('.')[0]); if (major < 20) process.exit(1)"; then
-  echo "Node.js 20.19+ is required. Upgrade Node.js, then run ./run.sh again." >&2
+if ! node -e "const [major,minor]=process.versions.node.split('.').map(Number); const supported=(major===20&&minor>=19)||(major===22&&minor>=12)||major>=24; if (!supported) process.exit(1)"; then
+  echo "Node.js 20.19+, 22.12+ or 24+ is required. Upgrade Node.js, then run ./run.sh again." >&2
   exit 1
 fi
 if ! command -v npm >/dev/null 2>&1; then
