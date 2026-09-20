@@ -101,7 +101,8 @@ On 2026-09-20, the adapter authenticated against `https://test-maarg.hotwax.io`
 using the company app's local runtime credentials in one ephemeral process.
 The password and bearer token were not printed, stored or copied into this
 repository. The process returned two Shopify shops, 20 locations, 25 variants
-and 25 orders from the selected shop; the variant and order reads reported
-additional pages. The process logged out before exit. This proves the verified
+and 25 orders on the first page from the selected shop; following the returned
+cursors returned another page for both variants and orders. The process logged
+out before exit. This proves the verified
 BASIC login and named read envelope for this account, not mutation permission
 or POS shop/location identity.

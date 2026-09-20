@@ -207,6 +207,11 @@ capture failure never replaces the original test failure.
   transport failure. Both runs were recorded as `failed` with
   `effect: not-started`; neither changed POS or Shopify data. This is an
   environment/WDA readiness issue, not a passing coordinator device run.
+- A later coordinator retry was run after the precondition classifier was
+  added. The locked iPad was recorded as `blocked` with `effect: not-started`
+  in 24 seconds; the run left no owned Appium, WDIO or Xcode build process
+  behind. The runner did not unlock the iPad or change any Apple access
+  setting.
 - A separate live read-only safety check passed: rejected an order-detail
   starting screen, deliberately mismatched detail reference and a no-results
   search. Search was cleared and Home restored before the final normal run.
