@@ -179,3 +179,20 @@ test('records a confirmed business effect only after the worker reports verified
   assert.equal(result.effect, 'confirmed');
   assert.equal(result.businessEffectIntentHash, intentHash);
 });
+
+test('classifies a missing worker result after a commit attempt as reconciliation', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-'));
+  const intentHash = 'f'.repeat(64);
+  const coordinator = createCoordinator({
+    root,
+    workerFactory: async ({ runId }) => {
+      await requestCommitAttempt(root, runId, intentHash);
+      return spawn(process.execPath, ['-e', 'setTimeout(() => {}, 100)'], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? '' } });
+    },
+  });
+  const accepted = await coordinator.startRun(request);
+  await eventually(async () => (await coordinator.getRun(accepted.id)).state === 'needs-reconciliation');
+  const result = await coordinator.getRun(accepted.id);
+  assert.equal(result.effect, 'unknown');
+  assert.match(result.statusMessage ?? '', /structured result/i);
+});

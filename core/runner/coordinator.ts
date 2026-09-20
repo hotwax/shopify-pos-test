@@ -114,6 +114,17 @@ function businessOutcomeEvent(record: RunRecord, request: CommitOutcomeRequest):
   };
 }
 
+function unknownEffectEvent(record: RunRecord, intentHash: string): RunEvent {
+  return {
+    protocolVersion: 1,
+    runId: record.id,
+    sequence: record.lastSequence + 1,
+    at: new Date().toISOString(),
+    type: 'business-effect',
+    data: { effect: 'unknown', intentHash },
+  };
+}
+
 export interface CoordinatorOptions {
   root: string;
   storage?: RunStorage;
@@ -272,23 +283,24 @@ export class RunCoordinator {
     try { result = JSON.parse(await readFile(join(active.artifactDir, 'result.json'), 'utf8')) as { passed: boolean; message?: string }; }
     catch { /* no structured result is a failure, regardless of process exit */ }
     if (!result || typeof result.passed !== 'boolean') {
-      const classification = await classifyWorkerFailure(active.artifactDir);
-      await this.append(current, stateEvent(current, classification.state, { reason: classification.reason, message: classification.message }));
+      if (current.effect === 'attempted' && current.businessEffectIntentHash) {
+        await this.append(await this.append(current, unknownEffectEvent(current, current.businessEffectIntentHash)), stateEvent(current, 'needs-reconciliation', {
+          reason: 'business-effect-result-missing',
+          message: 'The worker stopped after a commit boundary without a structured result. Reconcile the test-store result before retrying.',
+        }));
+      } else {
+        const classification = await classifyWorkerFailure(active.artifactDir);
+        await this.append(current, stateEvent(current, classification.state, { reason: classification.reason, message: classification.message }));
+      }
     } else if (current.effect === 'attempted') {
       const intentHash = current.businessEffectIntentHash;
-      const unknown = intentHash
-        ? await this.append(current, {
-          protocolVersion: 1,
-          runId: current.id,
-          sequence: current.lastSequence + 1,
-          at: new Date().toISOString(),
-          type: 'business-effect',
-          data: { effect: 'unknown', intentHash },
-        })
-        : current;
-      await this.append(unknown, stateEvent(unknown, 'needs-reconciliation', {
+      if (intentHash) await this.append(await this.append(current, unknownEffectEvent(current, intentHash)), stateEvent(current, 'needs-reconciliation', {
         reason: 'business-effect-not-confirmed',
         message: 'The worker reached a commit boundary but did not provide confirmed read-back. Reconcile the test-store result before retrying.',
+      }));
+      else await this.append(current, stateEvent(current, 'needs-reconciliation', {
+        reason: 'business-effect-intent-missing',
+        message: 'The worker reached a commit boundary without an intent identity. Reconcile the test-store result before retrying.',
       }));
     } else {
       await this.append(current, stateEvent(current, result.passed ? 'passed' : 'failed', { message: result.message ?? 'Structured worker result received.' }));
