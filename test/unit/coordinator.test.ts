@@ -10,6 +10,7 @@ import { spawn } from '../../core/runner/process.ts';
 import { isTerminalState } from '../../core/runner/protocol.ts';
 import type { RunRequest } from '../../shared/contracts.ts';
 import { createScenarioContext } from '../../test/support/context.ts';
+import { readWorkerInput } from '../../core/runner/input.ts';
 
 const request: RunRequest = {
   scriptId: 'pos.open-first-order', deviceProfileId: 'test-ipad', parameters: {},
@@ -219,4 +220,21 @@ test('routes observed-order correlation through the owned coordinator bridge', a
   } });
   await eventually(async () => (await coordinator.getRun(accepted.id)).state === 'passed');
   assert.equal(receivedContext, true);
+});
+
+test('binds the exact sanitized request to the owned worker input file', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-input-'));
+  let received = false;
+  const coordinator = createCoordinator({
+    root,
+    currentRevision: () => 'revision-input',
+    workerFactory: async ({ runId, inputFile, request: workerRequest, artifactDir }) => {
+      received = JSON.stringify(await readWorkerInput(inputFile, runId)) === JSON.stringify(workerRequest);
+      await writeFile(join(artifactDir, 'result.json'), JSON.stringify({ passed: received }));
+      return spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30)'], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? '' } });
+    },
+  });
+  const accepted = await coordinator.startRun({ ...request, expectedRevision: 'revision-input', parameters: { marker: 'worker-input' } });
+  await eventually(async () => (await coordinator.getRun(accepted.id)).state === 'passed');
+  assert.equal(received, true);
 });

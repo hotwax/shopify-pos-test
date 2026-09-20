@@ -6,7 +6,7 @@ import type { WorkerFactory } from './coordinator.ts';
 import { registry } from '../../test/scenarios/registry.ts';
 
 export function createWdioWorkerFactory(root: string): WorkerFactory {
-  return async ({ runId, request, artifactDir }) => {
+  return async ({ runId, request, artifactDir, inputFile }) => {
     const profile = await getDeviceProfile(root, request.deviceProfileId);
     if (!profile) throw new Error('The selected device profile is not saved on this Mac.');
     const catalog = await loadCatalog(root);
@@ -17,7 +17,7 @@ export function createWdioWorkerFactory(root: string): WorkerFactory {
     const appiumPort = await findAvailablePort(4723);
     const wdaLocalPort = await findAvailablePort(8101);
     const wdaDerivedDataPath = resolve(root, '.runtime', 'runs', runId, 'wda');
-    const env = makeWorkerEnvironment(profile, runId, artifactDir, appiumPort, wdaLocalPort, wdaDerivedDataPath, root);
+    const env = makeWorkerEnvironment(profile, runId, artifactDir, appiumPort, wdaLocalPort, wdaDerivedDataPath, root, inputFile);
     return spawn(resolve(root, 'node_modules/@wdio/cli/bin/wdio.js'), ['run', resolve(root, 'wdio.conf.ts')], {
       cwd: root,
       env: { ...env, WDIO_ENTRY: scenario.entry },

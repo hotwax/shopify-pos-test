@@ -112,9 +112,10 @@ export function spawn(executable: string, args: string[], options: { cwd: string
   };
 }
 
-export function makeWorkerEnvironment(device: DeviceProfile, runId: string, artifactDir: string, port: number, wdaLocalPort: number, wdaDerivedDataPath: string, testingRoot = process.cwd()): Record<string, string> {
+export function makeWorkerEnvironment(device: DeviceProfile, runId: string, artifactDir: string, port: number, wdaLocalPort: number, wdaDerivedDataPath: string, testingRoot = process.cwd(), workerInputFile?: string): Record<string, string> {
   if (!isAbsolute(artifactDir)) throw new Error('Artifact directory must be absolute.');
   if (!isAbsolute(wdaDerivedDataPath)) throw new Error('WDA DerivedData path must be absolute.');
+  if (workerInputFile !== undefined && !isAbsolute(workerInputFile)) throw new Error('Worker input file must be absolute.');
   return {
     PATH: process.env.PATH ?? '',
     HOME: process.env.HOME ?? '',
@@ -127,6 +128,7 @@ export function makeWorkerEnvironment(device: DeviceProfile, runId: string, arti
     APPIUM_PORT: String(port),
     WDA_LOCAL_PORT: String(wdaLocalPort),
     WDA_DERIVED_DATA_PATH: wdaDerivedDataPath,
+    ...(workerInputFile ? { RUN_INPUT_FILE: workerInputFile } : {}),
   };
 }
 

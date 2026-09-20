@@ -25,10 +25,10 @@ const wdaLocalPort = await findAvailablePort(8101);
 const revision = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const coordinator = createCoordinator({
   root,
-  workerFactory: async ({ runId, request, artifactDir }) => {
+  workerFactory: async ({ runId, request, artifactDir, inputFile }) => {
     const wdaDerivedDataPath = resolve(root, '.runtime', 'runs', runId, 'wda');
     const env = {
-      ...makeWorkerEnvironment({ id: request.deviceProfileId, ...device }, runId, artifactDir, appiumPort, wdaLocalPort, wdaDerivedDataPath, root),
+      ...makeWorkerEnvironment({ id: request.deviceProfileId, ...device }, runId, artifactDir, appiumPort, wdaLocalPort, wdaDerivedDataPath, root, inputFile),
       WDIO_ENTRY: scenario.entry,
     };
     return spawn(resolve(root, 'node_modules/@wdio/cli/bin/wdio.js'), ['run', resolve(root, 'wdio.conf.ts')], { cwd: root, env, cleanupMarkers: ['xcodebuild', wdaDerivedDataPath] });

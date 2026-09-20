@@ -11,11 +11,13 @@ import type { OwnedProcess } from './process.ts';
 import { approveCheckpoint as writeApproval, clearApprovalRequest, readApprovalRequest, type ApprovalRequest } from './approval.ts';
 import { acknowledgeCommitAttempt, acknowledgeCommitOutcome, clearCommitAttempt, clearCommitOutcome, readCommitAttempt, readCommitOutcome, type CommitAttemptRequest, type CommitOutcomeRequest } from './effects.ts';
 import { clearBridgeRequest, readBridgeRequests, writeBridgeResponse } from './bridge.ts';
+import { writeWorkerInput } from './input.ts';
 
 export interface WorkerInput {
   runId: string;
   request: RunRequest;
   artifactDir: string;
+  inputFile: string;
 }
 
 export type WorkerFactory = (input: WorkerInput, emit: (event: RunEvent) => Promise<void>) => Promise<OwnedProcess>;
@@ -172,6 +174,14 @@ export class RunCoordinator {
       return blocked;
     }
     const artifactDir = await createArtifactDirectory(this.root, id);
+    let inputFile: string;
+    try {
+      inputFile = await writeWorkerInput(this.root, id, request);
+    } catch (error) {
+      const blocked = await this.append(initial, stateEvent(initial, 'blocked', { reason: 'unsafe-worker-input', message: this.safeError(error) }));
+      await lock.release();
+      return blocked;
+    }
     const active: ActiveRun = { lock, artifactDir, stopping: false };
     this.active.set(id, active);
     let accepted = await this.append(initial, stateEvent(initial, 'preparing'));
@@ -182,7 +192,7 @@ export class RunCoordinator {
     }
     // Persist acceptance before the worker is created. A caller can safely
     // reload and observe `preparing`; no test action is inferred from a PID.
-    void this.launch(accepted, active).catch(async error => {
+    void this.launch(accepted, active, inputFile).catch(async error => {
       const current = await this.storage.get(id).catch(() => accepted);
       if (!isTerminalState(current.state)) await this.append(current, stateEvent(current, 'failed', { reason: 'worker-start-failed', message: this.safeError(error) }));
       await this.finish(id);
@@ -232,7 +242,7 @@ export class RunCoordinator {
     };
   }
 
-  private async launch(record: RunRecord, active: ActiveRun): Promise<void> {
+  private async launch(record: RunRecord, active: ActiveRun, inputFile: string): Promise<void> {
     const running = await this.append(record, stateEvent(record, 'running'));
     let polling = false;
     let bridgePolling = false;
@@ -299,7 +309,7 @@ export class RunCoordinator {
     }, 100);
     try {
       active.process = await this.workerFactory!(
-        { runId: running.id, request: running.request, artifactDir: active.artifactDir },
+        { runId: running.id, request: running.request, artifactDir: active.artifactDir, inputFile },
         event => this.appendAndNotify(event),
       );
       if (active.stopping) await active.process.terminate();
