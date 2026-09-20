@@ -15,7 +15,8 @@
     "start": "tsx server/index.ts",
     "test:shell": "node --import tsx --test test/browser/*.spec.ts",
     "doctor": "tsx scripts/doctor.ts",
-    "test:orders": "wdio run ./wdio.conf.ts"
+    "test:orders": "node --import tsx scripts/run-test.ts --id pos.open-first-order",
+    "test:script": "node --import tsx scripts/run-test.ts"
   },
   "devDependencies": {
     "@types/mocha": "10.0.10",

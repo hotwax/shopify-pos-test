@@ -16,6 +16,8 @@ export type RunState =
 
 export type BusinessEffect = 'not-started' | 'attempted' | 'confirmed' | 'unknown';
 
+export interface Money { amount: string; currency: string }
+
 export interface ScriptDefinition {
   schemaVersion: 1;
   id: string;

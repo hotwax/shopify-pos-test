@@ -97,6 +97,7 @@ npm run build
 npm run start
 npm run doctor
 npm run test:orders
+npm run test:script -- --id pos.open-first-order
 ```
 
 The test begins with POS already on Home, no blocking dialog and at
