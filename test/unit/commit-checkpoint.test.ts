@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { approveCheckpoint, consumeApproval } from '../../core/runner/approval.ts';
 import { consumeCommitCheckpoint, writeCommitCheckpoint } from '../../core/runner/checkpoint.ts';
+import { readResources, recordResource } from '../../core/runner/resources.ts';
 import { createScenarioContext } from '../../test/support/context.ts';
 import type { TransactionIntent } from '../../shared/transaction.ts';
 
@@ -50,4 +51,14 @@ test('owned scenario context consumes the exact approval before recording a comm
   await context.recordCommitAttempt(hash);
   assert.equal(await consumeCommitCheckpoint(root, 'run-1', hash), true);
   await assert.rejects(() => context.requireApproval(intent), /approval/i);
+});
+
+test('records sanitized affected resource IDs without duplicating them', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-resources-'));
+  await recordResource(root, 'run-1', 'order', 'gid://shopify/Order/1');
+  await recordResource(root, 'run-1', 'order', 'gid://shopify/Order/1');
+  await recordResource(root, 'run-1', 'return', 'gid://shopify/Return/1');
+  assert.deepEqual(await readResources(root, 'run-1'), { order: ['gid://shopify/Order/1'], return: ['gid://shopify/Return/1'] });
+  await assert.rejects(() => recordResource(root, '../run', 'order', 'gid://shopify/Order/1'));
+  await assert.rejects(() => recordResource(root, 'run-1', 'order', 'not-an-id'));
 });
