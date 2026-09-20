@@ -6,7 +6,7 @@ import { createLaunchLock } from './session.ts';
 import { createCoordinator } from '../core/runner/coordinator.ts';
 import { createWdioWorkerFactory } from '../core/runner/worker.ts';
 import { OmsClient } from '../core/oms/client.ts';
-import { resolveObservedOrder } from '../core/oms/correlation.ts';
+import { resolveObservedOrder, resolveShopifyOrder } from '../core/oms/correlation.ts';
 import { configuredOmsConnections } from '../core/oms/config.ts';
 
 const root = resolve(import.meta.dirname, '..');
@@ -23,6 +23,10 @@ if (!lock.acquired) {
     resolveObservedOrder: async ({ request, observedName, runMarker }) => {
       if (!request.context) throw new Error('The run has no frozen OMS target context.');
       return resolveObservedOrder(oms, request.context, { observedName, runMarker });
+    },
+    readShopifyOrder: async ({ request, orderGid }) => {
+      if (!request.context) throw new Error('The run has no frozen OMS target context.');
+      return resolveShopifyOrder(oms, request.context, { orderGid });
     },
   });
   const server = await createApiServer({ port: 8127, mode: 'serve', root, staticDir: resolve(root, 'dist'), coordinator, oms });

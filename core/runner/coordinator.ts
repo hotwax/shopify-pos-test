@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { RunEvent, RunRecord, RunRequest } from '../../shared/contracts.ts';
+import type { OmsShopifyOrderDetail, RunEvent, RunRecord, RunRequest } from '../../shared/contracts.ts';
 import { createArtifactDirectory } from '../storage/artifacts.ts';
 import { createRunStorage, type RunStorage } from '../storage/runs.ts';
 import { acquireDeviceRunLock, type DeviceRunLock } from './lock.ts';
@@ -135,6 +135,7 @@ export interface CoordinatorOptions {
   workerFactory?: WorkerFactory;
   currentRevision?: () => string | undefined;
   resolveObservedOrder?: (input: { request: RunRequest; observedName: string; runMarker?: string }) => Promise<{ orderGid: string; orderName: string }>;
+  readShopifyOrder?: (input: { request: RunRequest; orderGid: string }) => Promise<OmsShopifyOrderDetail>;
 }
 
 export class RunCoordinator {
@@ -143,6 +144,7 @@ export class RunCoordinator {
   private readonly workerFactory?: WorkerFactory;
   private readonly currentRevision: () => string | undefined;
   private readonly resolveObservedOrder?: CoordinatorOptions['resolveObservedOrder'];
+  private readonly readShopifyOrder?: CoordinatorOptions['readShopifyOrder'];
   private readonly active = new Map<string, ActiveRun>();
   private readonly listeners = new Map<string, Set<(event: RunEvent) => void>>();
   private readonly appendTails = new Map<string, Promise<RunRecord>>();
@@ -152,6 +154,7 @@ export class RunCoordinator {
     this.storage = options.storage ?? createRunStorage(this.root);
     this.workerFactory = options.workerFactory;
     this.resolveObservedOrder = options.resolveObservedOrder;
+    this.readShopifyOrder = options.readShopifyOrder;
     this.currentRevision = options.currentRevision ?? (() => {
       try { return execFileSync('git', ['-C', this.root, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || undefined; }
       catch { return undefined; }
@@ -296,14 +299,25 @@ export class RunCoordinator {
           await clearBridgeRequest(this.root, request);
           return;
         }
-        let result: { orderGid: string; orderName: string } | undefined;
-        let error: string | undefined;
-        if (!this.resolveObservedOrder) error = 'Observed-order correlation is not configured for this local host.';
-        else {
-          try { result = await this.resolveObservedOrder({ request: running.request, observedName: request.observedName, runMarker: request.runMarker }); }
-          catch (cause) { error = this.safeError(cause); }
+        if (request.operation === 'resolveObservedOrder') {
+          let result: { orderGid: string; orderName: string } | undefined;
+          let error: string | undefined;
+          if (!this.resolveObservedOrder) error = 'Observed-order correlation is not configured for this local host.';
+          else {
+            try { result = await this.resolveObservedOrder({ request: running.request, observedName: request.observedName, runMarker: request.runMarker }); }
+            catch (cause) { error = this.safeError(cause); }
+          }
+          await writeBridgeResponse(this.root, request, result ? { ok: true, orderGid: result.orderGid, orderName: result.orderName } : { ok: false, error: error ?? 'The observed POS order could not be resolved.' });
+        } else {
+          let result: OmsShopifyOrderDetail | undefined;
+          let error: string | undefined;
+          if (!this.readShopifyOrder) error = 'Shopify order readback is not configured for this local host.';
+          else {
+            try { result = await this.readShopifyOrder({ request: running.request, orderGid: request.orderGid }); }
+            catch (cause) { error = this.safeError(cause); }
+          }
+          await writeBridgeResponse(this.root, request, result ? { ok: true, order: result } : { ok: false, error: error ?? 'The Shopify order could not be read back.' });
         }
-        await writeBridgeResponse(this.root, request, result ? { ok: true, orderGid: result.orderGid, orderName: result.orderName } : { ok: false, error: error ?? 'The observed POS order could not be resolved.' });
         await clearBridgeRequest(this.root, request);
       } finally { bridgePolling = false; }
     };

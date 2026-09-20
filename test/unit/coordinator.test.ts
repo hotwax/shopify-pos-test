@@ -223,6 +223,30 @@ test('routes observed-order correlation through the owned coordinator bridge', a
   assert.equal(receivedContext, true);
 });
 
+test('routes Shopify order readback through the owned coordinator bridge', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-order-'));
+  let receivedContext = false;
+  const detail = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], transactions: [], agreements: [], lines: [], nextCursor: null };
+  const coordinator = createCoordinator({
+    root,
+    readShopifyOrder: async ({ request: workerRequest, orderGid }) => {
+      receivedContext = Boolean(workerRequest.context?.shopGid === 'gid://shopify/Shop/1' && orderGid === detail.gid);
+      return detail;
+    },
+    workerFactory: async ({ runId, artifactDir }) => {
+      const resolved = await createScenarioContext({ root, runId, bridgeTimeoutMs: 1_000 }).readShopifyOrder(detail.gid);
+      await writeFile(join(artifactDir, 'result.json'), JSON.stringify({ passed: resolved.name === '#42' }));
+      return spawn(process.execPath, ['-e', 'setTimeout(() => {}, 50)'], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? '' } });
+    },
+  });
+  const accepted = await coordinator.startRun({ ...request, context: {
+    connectionId: 'local', omsOrigin: 'https://oms.example', userId: 'user-1', connectorShopId: 'shop-1',
+    shopGid: 'gid://shopify/Shop/1', shopDomain: 'test.myshopify.com', locationGid: 'gid://shopify/Location/1', apiVersion: '2026-01',
+  } });
+  await eventually(async () => (await coordinator.getRun(accepted.id)).state === 'passed');
+  assert.equal(receivedContext, true);
+});
+
 test('binds the exact sanitized request to the owned worker input file', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-input-'));
   let received = false;

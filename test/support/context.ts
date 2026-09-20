@@ -1,10 +1,11 @@
 import type { TransactionIntent } from '../../shared/transaction.ts';
 import { consumeApproval, requestApproval } from '../../core/runner/approval.ts';
-import { consumeBridgeResponse, createObservedOrderRequest } from '../../core/runner/bridge.ts';
+import { consumeBridgeResponse, createObservedOrderRequest, createShopifyOrderRequest } from '../../core/runner/bridge.ts';
 import { consumeCommitCheckpoint, writeCommitCheckpoint } from '../../core/runner/checkpoint.ts';
 import { consumeCommitAcknowledgement, consumeCommitOutcomeAcknowledgement, requestCommitAttempt, requestCommitOutcome } from '../../core/runner/effects.ts';
 import { recordResource } from '../../core/runner/resources.ts';
 import { hashIntent } from '../../core/safety/intent.ts';
+import type { OmsShopifyOrderDetail } from '../../shared/contracts.ts';
 
 export interface ScenarioContext {
   step<T>(name: string, operation: () => Promise<T>): Promise<T>;
@@ -14,6 +15,7 @@ export interface ScenarioContext {
   recordResource(kind: string, gid: string): Promise<void>;
   checkStopped(): void;
   resolveObservedOrder(input: { observedName: string; runMarker?: string }): Promise<{ orderGid: string; orderName: string }>;
+  readShopifyOrder(orderGid: string): Promise<OmsShopifyOrderDetail>;
 }
 
 export interface ScenarioContextOptions {
@@ -35,6 +37,7 @@ export function unavailableScenarioContext(): ScenarioContext {
     recordResource: unavailable,
     checkStopped: () => undefined,
     resolveObservedOrder: unavailable,
+    readShopifyOrder: unavailable,
   };
 }
 
@@ -93,12 +96,27 @@ export function createScenarioContext(options: ScenarioContextOptions = { root: 
       while (Date.now() < deadline) {
         const response = await consumeBridgeResponse(options.root, request);
         if (response) {
-          if (!response.ok || !response.orderGid || !response.orderName) throw new Error(response.error ?? 'The OMS could not resolve the observed POS order.');
+          if (!response.ok || response.operation !== 'resolveObservedOrder' || !response.orderGid || !response.orderName) throw new Error(response.error ?? 'The OMS could not resolve the observed POS order.');
           return { orderGid: response.orderGid, orderName: response.orderName };
         }
         await new Promise(resolve => setTimeout(resolve, 250));
       }
       throw new Error('The OMS did not respond to the observed-order correlation request.');
+    },
+    readShopifyOrder: async orderGid => {
+      const request = await createShopifyOrderRequest(options.root, options.runId, { orderGid });
+      const timeout = options.bridgeTimeoutMs ?? 5 * 60 * 1000;
+      if (!Number.isSafeInteger(timeout) || timeout <= 0) throw new Error('The Shopify order bridge timeout is invalid.');
+      const deadline = Date.now() + timeout;
+      while (Date.now() < deadline) {
+        const response = await consumeBridgeResponse(options.root, request);
+        if (response) {
+          if (!response.ok || response.operation !== 'readShopifyOrder' || !response.order) throw new Error(response.error ?? 'The OMS could not read the Shopify order.');
+          return response.order;
+        }
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      throw new Error('The OMS did not respond to the Shopify order readback request.');
     },
   };
 }

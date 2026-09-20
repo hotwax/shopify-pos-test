@@ -160,6 +160,28 @@ export interface OmsShopifyOrderLine {
   productGid: string | null;
   productTitle: string | null;
 }
+export interface OmsShopifyOrderTransaction {
+  id: string;
+  kind: string;
+  status: string;
+  gateway: string | null;
+  amount: Money | null;
+}
+export interface OmsShopifyOrderAgreementSale {
+  actionType: string;
+  lineType: string;
+  quantity: number;
+  amount: Money | null;
+  lineGid: string | null;
+  variantGid: string | null;
+}
+export interface OmsShopifyOrderAgreement {
+  id: string;
+  happenedAt: string;
+  returnGid: string | null;
+  returnName: string | null;
+  sales: OmsShopifyOrderAgreementSale[];
+}
 export interface OmsShopifyOrderDetail {
   gid: string;
   legacyResourceId: string | null;
@@ -167,6 +189,9 @@ export interface OmsShopifyOrderDetail {
   financialStatus: string | null;
   fulfillmentStatus: string | null;
   total: Money | null;
+  paymentGatewayNames: string[];
+  transactions: OmsShopifyOrderTransaction[];
+  agreements: OmsShopifyOrderAgreement[];
   lines: OmsShopifyOrderLine[];
   nextCursor: string | null;
 }

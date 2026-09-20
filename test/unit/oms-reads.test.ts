@@ -71,6 +71,9 @@ test('resolves an exact Shopify order GID into safe line detail', async () => {
     json([{ shopId: 'connector-1', shopifyShopId: 'gid://shopify/Shop/1', name: 'Test shop' }]),
     json({ statusCode: 200, response: { data: { order: {
       id: 'gid://shopify/Order/100', legacyResourceId: '100', name: '#100', displayFinancialStatus: 'PAID', displayFulfillmentStatus: 'UNFULFILLED',
+      paymentGatewayNames: ['cash'],
+      transactions: [{ id: 'gid://shopify/OrderTransaction/1', kind: 'SALE', status: 'SUCCESS', gateway: 'cash', amountSet: { shopMoney: { amount: '12.50', currencyCode: 'USD' } } }],
+      agreements: { nodes: [{ __typename: 'ReturnAgreement', id: 'gid://shopify/SalesAgreement/1', happenedAt: '2026-09-20T12:00:00Z', return: { id: 'gid://shopify/Return/1', name: '#R1' }, sales: { nodes: [{ actionType: 'RETURN', lineType: 'PRODUCT', quantity: -1, totalAmount: { shopMoney: { amount: '-12.50', currencyCode: 'USD' } }, lineItem: { id: 'gid://shopify/LineItem/1' } }] } }] },
       totalPriceSet: { shopMoney: { amount: '12.50', currencyCode: 'USD' } },
       lineItems: { nodes: [{ id: 'gid://shopify/LineItem/1', quantity: 2, refundableQuantity: 2, originalUnitPriceSet: { shopMoney: { amount: '6.25', currencyCode: 'USD' } }, variant: { id: 'gid://shopify/ProductVariant/1', title: 'Blue', sku: 'BLUE', product: { id: 'gid://shopify/Product/1', title: 'Shirt' } } }], pageInfo: { hasNextPage: false } },
     } } } }),
@@ -78,6 +81,9 @@ test('resolves an exact Shopify order GID into safe line detail', async () => {
   const detail = await client.resolveOrder('local', 'connector-1', { gid: 'gid://shopify/Order/100' });
   assert.deepEqual(detail, {
     gid: 'gid://shopify/Order/100', legacyResourceId: '100', name: '#100', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '12.50', currency: 'USD' },
+    paymentGatewayNames: ['cash'],
+    transactions: [{ id: 'gid://shopify/OrderTransaction/1', kind: 'SALE', status: 'SUCCESS', gateway: 'cash', amount: { amount: '12.50', currency: 'USD' } }],
+    agreements: [{ id: 'gid://shopify/SalesAgreement/1', happenedAt: '2026-09-20T12:00:00Z', returnGid: 'gid://shopify/Return/1', returnName: '#R1', sales: [{ actionType: 'RETURN', lineType: 'PRODUCT', quantity: -1, amount: { amount: '-12.50', currency: 'USD' }, lineGid: 'gid://shopify/LineItem/1', variantGid: null }] }],
     lines: [{ gid: 'gid://shopify/LineItem/1', quantity: 2, refundableQuantity: 2, unitPrice: { amount: '6.25', currency: 'USD' }, variantGid: 'gid://shopify/ProductVariant/1', variantTitle: 'Blue', sku: 'BLUE', productGid: 'gid://shopify/Product/1', productTitle: 'Shirt' }], nextCursor: null,
   });
   const request = JSON.parse(String(queued.calls.at(-1)?.init?.body));

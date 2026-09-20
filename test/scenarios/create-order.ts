@@ -1,8 +1,10 @@
 import type { RunRequest } from '../../shared/contracts.ts';
 import type { TransactionIntent } from '../../shared/transaction.ts';
 import { hashIntent } from '../../core/safety/intent.ts';
+import { isValidTargetContext } from '../../core/safety/environment.ts';
 import { assertCreatePrecommit, type ObservedCreateSummary } from '../../core/safety/transaction-flow.ts';
 import { validateCreateOrder, type CreateOrderParameters } from '../../core/safety/transaction-inputs.ts';
+import { verifyCreatedOrder } from '../../core/verification/order.ts';
 import type { ScenarioContext } from '../support/context.ts';
 
 export interface CreateOrderDriver {
@@ -14,7 +16,7 @@ export interface CreateOrderDriver {
 }
 
 function createIntent(parameters: CreateOrderParameters, request: RunRequest, udid: string): TransactionIntent {
-  if (!request.context) throw new Error('A create-order run requires a frozen target context.');
+  if (!isValidTargetContext(request.context)) throw new Error('A create-order run requires an exact frozen target context.');
   if (!udid.trim()) throw new Error('The create-order run has no observed iPad identity.');
   return {
     scenario: 'pos.create-cash-order',
@@ -50,6 +52,11 @@ export async function createCashOrder(
   const orderName = (await driver.readCompletedOrderName()).trim();
   if (!orderName || orderName.length > 120) throw new Error('The completed POS order did not expose a bounded order reference.');
   const observedOrder = await context.resolveObservedOrder({ observedName: orderName, runMarker: intentHash.slice(0, 12) });
+  await context.step('verify-shopify-create', async () => {
+    const readback = await context.readShopifyOrder(observedOrder.orderGid);
+    const verification = verifyCreatedOrder(readback, parameters, observed.tender);
+    if (!verification.passed) throw new Error(`Shopify create-order read-back failed: ${verification.checks.filter(check => !check.passed).map(check => check.name).join(', ')}.`);
+  });
   await context.recordResource('shopify-order', observedOrder.orderGid);
   await context.recordBusinessEffect('confirmed', intentHash);
   return observedOrder;

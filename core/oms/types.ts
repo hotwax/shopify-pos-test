@@ -50,6 +50,31 @@ export interface OmsShopifyOrderLine {
   productTitle: string | null;
 }
 
+export interface OmsShopifyOrderTransaction {
+  id: string;
+  kind: string;
+  status: string;
+  gateway: string | null;
+  amount: { amount: string; currency: string } | null;
+}
+
+export interface OmsShopifyOrderAgreementSale {
+  actionType: string;
+  lineType: string;
+  quantity: number;
+  amount: { amount: string; currency: string } | null;
+  lineGid: string | null;
+  variantGid: string | null;
+}
+
+export interface OmsShopifyOrderAgreement {
+  id: string;
+  happenedAt: string;
+  returnGid: string | null;
+  returnName: string | null;
+  sales: OmsShopifyOrderAgreementSale[];
+}
+
 export interface OmsShopifyOrderDetail {
   gid: string;
   legacyResourceId: string | null;
@@ -57,6 +82,9 @@ export interface OmsShopifyOrderDetail {
   financialStatus: string | null;
   fulfillmentStatus: string | null;
   total: { amount: string; currency: string } | null;
+  paymentGatewayNames: string[];
+  transactions: OmsShopifyOrderTransaction[];
+  agreements: OmsShopifyOrderAgreement[];
   lines: OmsShopifyOrderLine[];
   nextCursor: string | null;
 }

@@ -14,7 +14,23 @@ export const searchOrdersQuery = `query SearchOrders($first: Int!, $after: Strin
 
 export const resolveOrderQuery = `query ResolveOrder($id: ID!, $lineFirst: Int!, $lineAfter: String) {
   order(id: $id) {
-    id legacyResourceId name displayFinancialStatus displayFulfillmentStatus
+    id legacyResourceId name displayFinancialStatus displayFulfillmentStatus paymentGatewayNames
+    transactions { id kind status gateway amountSet { shopMoney { amount currencyCode } } }
+    agreements(first: 25) {
+      nodes {
+        __typename id happenedAt
+        ... on ReturnAgreement {
+          return { id name }
+          sales(first: 50) {
+            nodes {
+              actionType lineType quantity
+              totalAmount { shopMoney { amount currencyCode } }
+              ... on ProductSale { lineItem { id variant { id } } }
+            }
+          }
+        }
+      }
+    }
     totalPriceSet { shopMoney { amount currencyCode } }
     lineItems(first: $lineFirst, after: $lineAfter) {
       nodes {

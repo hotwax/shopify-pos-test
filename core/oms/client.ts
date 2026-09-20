@@ -1,7 +1,7 @@
 import type { Page } from '../../shared/contracts.ts';
 import { OmsSessionStore, type FetchLike } from './auth.ts';
 import { assertNamedReadQuery, listLocationsQuery, resolveOrderQuery, searchOrdersQuery, searchVariantsQuery, type NamedReadOperation } from './queries/documents.ts';
-import { OmsError, boundedCursor, boundedSearch, canonicalOrigin, type OmsConnectionConfig, type OmsConnectionSummary, type OmsLocation, type OmsOrder, type OmsOrderDetail, type OmsOrderItem, type OmsOrderRecord, type OmsService, type OmsShop, type OmsShopifyOrderDetail, type OmsShopifyOrderLine, type OmsVariant } from './types.ts';
+import { OmsError, boundedCursor, boundedSearch, canonicalOrigin, type OmsConnectionConfig, type OmsConnectionSummary, type OmsLocation, type OmsOrder, type OmsOrderDetail, type OmsOrderItem, type OmsOrderRecord, type OmsService, type OmsShop, type OmsShopifyOrderAgreement, type OmsShopifyOrderAgreementSale, type OmsShopifyOrderDetail, type OmsShopifyOrderLine, type OmsShopifyOrderTransaction, type OmsVariant } from './types.ts';
 
 function object(value: unknown): Record<string, any> {
   if (!value || typeof value !== 'object') throw new OmsError('invalid-data', 'The OMS returned an invalid JSON object.');
@@ -45,6 +45,18 @@ function optionalNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const result = Number(value);
   return Number.isFinite(result) ? result : null;
+}
+
+function requiredNumber(value: unknown, label: string): number {
+  const result = optionalNumber(value);
+  if (result === null || !Number.isSafeInteger(result)) throw new OmsError('invalid-data', `The OMS returned an invalid ${label}.`);
+  return result;
+}
+
+function boundedStrings(value: unknown, label: string, maximum: number): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > maximum) throw new OmsError('invalid-data', `The OMS returned too many or invalid ${label}.`);
+  return value.map(item => requiredString(item, label));
 }
 
 function optionalMoney(value: unknown): string | null {
@@ -126,8 +138,52 @@ function mapMoneySet(raw: Record<string, any> | undefined): { amount: string; cu
   return amount && currency ? { amount, currency } : null;
 }
 
+function mapOrderTransaction(raw: Record<string, any>): OmsShopifyOrderTransaction {
+  const id = requiredString(raw.id, 'an order transaction ID');
+  if (!/^gid:\/\/shopify\/OrderTransaction\/[A-Za-z0-9_-]+$/.test(id)) throw new OmsError('invalid-data', 'The OMS returned an invalid order transaction ID.');
+  return {
+    id,
+    kind: requiredString(raw.kind, 'an order transaction kind'),
+    status: requiredString(raw.status, 'an order transaction status'),
+    gateway: optionalString(raw.gateway),
+    amount: mapMoneySet(raw.amountSet),
+  };
+}
+
+function mapAgreementSale(raw: Record<string, any>): OmsShopifyOrderAgreementSale {
+  const lineGid = optionalString(raw.lineItem?.id);
+  if (lineGid && !/^gid:\/\/shopify\/LineItem\/[A-Za-z0-9_-]+$/.test(lineGid)) throw new OmsError('invalid-data', 'The OMS returned an invalid order agreement line ID.');
+  const variantGid = optionalString(raw.lineItem?.variant?.id);
+  if (variantGid && !/^gid:\/\/shopify\/ProductVariant\/[A-Za-z0-9_-]+$/.test(variantGid)) throw new OmsError('invalid-data', 'The OMS returned an invalid order agreement variant ID.');
+  return {
+    actionType: requiredString(raw.actionType, 'an order agreement action'),
+    lineType: requiredString(raw.lineType, 'an order agreement line type'),
+    quantity: requiredNumber(raw.quantity, 'order agreement quantity'),
+    amount: mapMoneySet(raw.totalAmount),
+    lineGid,
+    variantGid,
+  };
+}
+
+function mapOrderAgreement(raw: Record<string, any>): OmsShopifyOrderAgreement {
+  const id = requiredString(raw.id, 'an order agreement ID');
+  if (!/^gid:\/\/shopify\/SalesAgreement\/[A-Za-z0-9_-]+$/.test(id)) throw new OmsError('invalid-data', 'The OMS returned an invalid order agreement ID.');
+  const happenedAt = requiredString(raw.happenedAt, 'an order agreement timestamp');
+  if (!Number.isFinite(Date.parse(happenedAt))) throw new OmsError('invalid-data', 'The OMS returned an invalid order agreement timestamp.');
+  const returnGid = optionalString(raw.return?.id);
+  if (returnGid && !/^gid:\/\/shopify\/Return\/[A-Za-z0-9_-]+$/.test(returnGid)) throw new OmsError('invalid-data', 'The OMS returned an invalid return ID.');
+  return {
+    id,
+    happenedAt,
+    returnGid,
+    returnName: optionalString(raw.return?.name),
+    sales: array(raw.sales?.nodes).slice(0, 100).map(mapAgreementSale),
+  };
+}
+
 function mapShopifyOrder(raw: Record<string, any>): OmsShopifyOrderDetail {
   const gid = requiredString(raw.id, 'a Shopify order GID');
+  if (!/^gid:\/\/shopify\/Order\/[A-Za-z0-9_-]+$/.test(gid)) throw new OmsError('invalid-data', 'The OMS returned an invalid Shopify order ID.');
   const lines: OmsShopifyOrderLine[] = array(raw.lineItems?.nodes).map(line => {
     const variant = line.variant && typeof line.variant === 'object' ? line.variant as Record<string, any> : undefined;
     const product = variant?.product && typeof variant.product === 'object' ? variant.product as Record<string, any> : undefined;
@@ -144,6 +200,8 @@ function mapShopifyOrder(raw: Record<string, any>): OmsShopifyOrderDetail {
     };
   });
   const pageInfo = raw.lineItems?.pageInfo && typeof raw.lineItems.pageInfo === 'object' ? raw.lineItems.pageInfo as Record<string, any> : {};
+  const transactions = array(raw.transactions).slice(0, 100).map(mapOrderTransaction);
+  const agreements = array(raw.agreements?.nodes).filter(item => item.__typename === 'ReturnAgreement').slice(0, 25).map(mapOrderAgreement);
   return {
     gid,
     legacyResourceId: optionalString(raw.legacyResourceId),
@@ -151,6 +209,9 @@ function mapShopifyOrder(raw: Record<string, any>): OmsShopifyOrderDetail {
     financialStatus: optionalString(raw.displayFinancialStatus),
     fulfillmentStatus: optionalString(raw.displayFulfillmentStatus),
     total: mapMoneySet(raw.totalPriceSet),
+    paymentGatewayNames: boundedStrings(raw.paymentGatewayNames, 'payment gateway names', 20),
+    transactions,
+    agreements,
     lines,
     nextCursor: pageInfo.hasNextPage && typeof pageInfo.endCursor === 'string' ? pageInfo.endCursor : null,
   };

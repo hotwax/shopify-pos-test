@@ -90,7 +90,7 @@ test('keeps OMS credentials on the localhost sidecar and exposes only named read
     shops: async () => [{ connectorShopId: 'shop-1', shopGid: 'gid://shopify/Shop/1', shopDomain: 'test.myshopify.com', name: 'Test', locationGid: null, currency: 'USD', timezone: 'UTC' }],
     searchVariants: async () => ({ items: [], nextCursor: null }),
     searchOrders: async () => ({ items: [], nextCursor: null }),
-    resolveOrder: async () => ({ gid: 'gid://shopify/Order/1', legacyResourceId: '1', name: '#1', financialStatus: 'PAID', fulfillmentStatus: null, total: { amount: '1.00', currency: 'USD' }, lines: [], nextCursor: null }),
+    resolveOrder: async () => ({ gid: 'gid://shopify/Order/1', legacyResourceId: '1', name: '#1', financialStatus: 'PAID', fulfillmentStatus: null, total: { amount: '1.00', currency: 'USD' }, paymentGatewayNames: [], transactions: [], agreements: [], lines: [], nextCursor: null }),
     searchOrderRecords: async () => ({ items: [{ orderId: 'M1', orderName: 'M1', externalId: null, statusId: 'ORDER_APPROVED', orderDate: null, grandTotal: null, currency: null, itemCount: 0 }], nextCursor: null }),
     getOrderDetail: async () => ({ orderId: 'M1', orderName: 'M1', externalId: null, statusId: 'ORDER_APPROVED', orderDate: null, grandTotal: null, currency: null, items: [] }),
     listLocations: async () => ({ items: [], nextCursor: null }),

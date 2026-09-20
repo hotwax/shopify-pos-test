@@ -47,3 +47,24 @@ test('scenario context resolves an observed POS order through the owned bridge',
   assert.deepEqual(await contextRunner.resolveObservedOrder({ observedName: '#42' }), { orderGid: 'gid://shopify/Order/42', orderName: '#42' });
   await responder;
 });
+
+test('scenario context reads a sanitized Shopify order through the owned bridge', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-context-order-'));
+  const runId = 'run-context-order-bridge';
+  const contextRunner = createScenarioContext({ root, runId, bridgeTimeoutMs: 1_000 });
+  const detail = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], transactions: [], agreements: [], lines: [], nextCursor: null };
+  const responder = (async () => {
+    const deadline = Date.now() + 1_000;
+    while (Date.now() < deadline) {
+      const request = (await readBridgeRequests(root, runId))[0];
+      if (request?.operation === 'readShopifyOrder') {
+        await writeBridgeResponse(root, request, { ok: true, order: detail });
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    throw new Error('shopify order bridge request was not written');
+  })();
+  assert.deepEqual(await contextRunner.readShopifyOrder('gid://shopify/Order/42'), detail);
+  await responder;
+});
