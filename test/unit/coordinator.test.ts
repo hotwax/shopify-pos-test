@@ -9,6 +9,7 @@ import { consumeCommitAcknowledgement, consumeCommitOutcomeAcknowledgement, requ
 import { spawn } from '../../core/runner/process.ts';
 import { isTerminalState } from '../../core/runner/protocol.ts';
 import type { RunRequest } from '../../shared/contracts.ts';
+import { createScenarioContext } from '../../test/support/context.ts';
 
 const request: RunRequest = {
   scriptId: 'pos.open-first-order', deviceProfileId: 'test-ipad', parameters: {},
@@ -195,4 +196,27 @@ test('classifies a missing worker result after a commit attempt as reconciliatio
   const result = await coordinator.getRun(accepted.id);
   assert.equal(result.effect, 'unknown');
   assert.match(result.statusMessage ?? '', /structured result/i);
+});
+
+test('routes observed-order correlation through the owned coordinator bridge', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-'));
+  let receivedContext = false;
+  const coordinator = createCoordinator({
+    root,
+    resolveObservedOrder: async ({ request: workerRequest, observedName }) => {
+      receivedContext = Boolean(workerRequest.context?.shopGid === 'gid://shopify/Shop/1');
+      return { orderGid: 'gid://shopify/Order/42', orderName: observedName };
+    },
+    workerFactory: async ({ runId, artifactDir }) => {
+      const resolved = await createScenarioContext({ root, runId, bridgeTimeoutMs: 1_000 }).resolveObservedOrder({ observedName: '#42' });
+      await writeFile(join(artifactDir, 'result.json'), JSON.stringify({ passed: resolved.orderGid.endsWith('/42') }));
+      return spawn(process.execPath, ['-e', 'setTimeout(() => {}, 50)'], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? '' } });
+    },
+  });
+  const accepted = await coordinator.startRun({ ...request, context: {
+    connectionId: 'local', omsOrigin: 'https://oms.example', userId: 'user-1', connectorShopId: 'shop-1',
+    shopGid: 'gid://shopify/Shop/1', shopDomain: 'test.myshopify.com', locationGid: 'gid://shopify/Location/1', apiVersion: '2026-01',
+  } });
+  await eventually(async () => (await coordinator.getRun(accepted.id)).state === 'passed');
+  assert.equal(receivedContext, true);
 });

@@ -10,6 +10,7 @@ import { isTerminalState, applyRunEvent, createInitialRunRecord } from './protoc
 import type { OwnedProcess } from './process.ts';
 import { approveCheckpoint as writeApproval, clearApprovalRequest, readApprovalRequest, type ApprovalRequest } from './approval.ts';
 import { acknowledgeCommitAttempt, acknowledgeCommitOutcome, clearCommitAttempt, clearCommitOutcome, readCommitAttempt, readCommitOutcome, type CommitAttemptRequest, type CommitOutcomeRequest } from './effects.ts';
+import { clearBridgeRequest, readBridgeRequests, writeBridgeResponse } from './bridge.ts';
 
 export interface WorkerInput {
   runId: string;
@@ -130,6 +131,7 @@ export interface CoordinatorOptions {
   storage?: RunStorage;
   workerFactory?: WorkerFactory;
   currentRevision?: () => string | undefined;
+  resolveObservedOrder?: (input: { request: RunRequest; observedName: string; runMarker?: string }) => Promise<{ orderGid: string; orderName: string }>;
 }
 
 export class RunCoordinator {
@@ -137,6 +139,7 @@ export class RunCoordinator {
   private readonly storage: RunStorage;
   private readonly workerFactory?: WorkerFactory;
   private readonly currentRevision: () => string | undefined;
+  private readonly resolveObservedOrder?: CoordinatorOptions['resolveObservedOrder'];
   private readonly active = new Map<string, ActiveRun>();
   private readonly listeners = new Map<string, Set<(event: RunEvent) => void>>();
   private readonly appendTails = new Map<string, Promise<RunRecord>>();
@@ -145,6 +148,7 @@ export class RunCoordinator {
     this.root = resolve(options.root);
     this.storage = options.storage ?? createRunStorage(this.root);
     this.workerFactory = options.workerFactory;
+    this.resolveObservedOrder = options.resolveObservedOrder;
     this.currentRevision = options.currentRevision ?? (() => {
       try { return execFileSync('git', ['-C', this.root, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || undefined; }
       catch { return undefined; }
@@ -231,6 +235,7 @@ export class RunCoordinator {
   private async launch(record: RunRecord, active: ActiveRun): Promise<void> {
     const running = await this.append(record, stateEvent(record, 'running'));
     let polling = false;
+    let bridgePolling = false;
     const pollRequests = async () => {
       if (polling) return;
       polling = true;
@@ -266,7 +271,32 @@ export class RunCoordinator {
         }
       } finally { polling = false; }
     };
-    const approvalTimer = setInterval(() => { void pollRequests().catch(() => undefined); }, 100);
+    const pollBridge = async () => {
+      if (bridgePolling) return;
+      bridgePolling = true;
+      try {
+        const request = (await readBridgeRequests(this.root, running.id))[0];
+        if (!request) return;
+        const current = await this.read(running.id);
+        if (isTerminalState(current.state)) {
+          await clearBridgeRequest(this.root, request);
+          return;
+        }
+        let result: { orderGid: string; orderName: string } | undefined;
+        let error: string | undefined;
+        if (!this.resolveObservedOrder) error = 'Observed-order correlation is not configured for this local host.';
+        else {
+          try { result = await this.resolveObservedOrder({ request: running.request, observedName: request.observedName, runMarker: request.runMarker }); }
+          catch (cause) { error = this.safeError(cause); }
+        }
+        await writeBridgeResponse(this.root, request, result ? { ok: true, orderGid: result.orderGid, orderName: result.orderName } : { ok: false, error: error ?? 'The observed POS order could not be resolved.' });
+        await clearBridgeRequest(this.root, request);
+      } finally { bridgePolling = false; }
+    };
+    const approvalTimer = setInterval(() => {
+      void pollRequests().catch(() => undefined);
+      void pollBridge().catch(() => undefined);
+    }, 100);
     try {
       active.process = await this.workerFactory!(
         { runId: running.id, request: running.request, artifactDir: active.artifactDir },

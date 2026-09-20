@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { approveCheckpoint } from '../../core/runner/approval.ts';
+import { readBridgeRequests, writeBridgeResponse } from '../../core/runner/bridge.ts';
 import { hashIntent } from '../../core/safety/intent.ts';
 import { createScenarioContext } from '../../test/support/context.ts';
 import type { TargetContext } from '../../shared/contracts.ts';
@@ -25,4 +26,24 @@ test('scenario approval waits for the exact one-time checkpoint', async () => {
   const pending = createScenarioContext({ root, runId }).requireApproval(intent);
   setTimeout(() => { void approveCheckpoint(root, runId, hashIntent(intent)); }, 25);
   assert.deepEqual(await pending, { intentHash: hashIntent(intent) });
+});
+
+test('scenario context resolves an observed POS order through the owned bridge', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-context-'));
+  const runId = 'run-context-bridge';
+  const contextRunner = createScenarioContext({ root, runId, bridgeTimeoutMs: 1_000 });
+  const responder = (async () => {
+    const deadline = Date.now() + 1_000;
+    while (Date.now() < deadline) {
+      const request = (await readBridgeRequests(root, runId))[0];
+      if (request) {
+        await writeBridgeResponse(root, request, { ok: true, orderGid: 'gid://shopify/Order/42', orderName: '#42' });
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    throw new Error('bridge request was not written');
+  })();
+  assert.deepEqual(await contextRunner.resolveObservedOrder({ observedName: '#42' }), { orderGid: 'gid://shopify/Order/42', orderName: '#42' });
+  await responder;
 });
