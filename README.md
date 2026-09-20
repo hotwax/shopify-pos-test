@@ -115,6 +115,7 @@ inspection are complete, the transaction UI remains blocked.
 ## Commands and safety
 
 ```sh
+npm test
 npm run test:unit
 npm run typecheck
 npm run build

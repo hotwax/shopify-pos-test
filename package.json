@@ -8,6 +8,7 @@
     "npm": ">=10"
   },
   "scripts": {
+    "test": "npm run test:unit && npm run typecheck && npm run build && npm run test:shell",
     "test:unit": "node --import tsx --test test/unit/*.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "vite build",
