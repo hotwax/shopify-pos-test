@@ -112,6 +112,7 @@ const selectedShop = computed(() => shops.value.find(shop => shop.connectorShopI
 
 function clearShopData(): void {
   variantRequest++; orderRequest++; locationRequest++;
+  variantLoading.value = false; orderLoading.value = false; locationLoading.value = false;
   variants.value = []; orders.value = []; locations.value = [];
   variantCursor.value = null; orderCursor.value = null; locationCursor.value = null;
   selectedVariant.value = undefined; selectedOrder.value = undefined; selectedLocation.value = undefined;
