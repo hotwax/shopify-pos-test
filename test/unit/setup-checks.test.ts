@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { listDevices, readDeviceLockState, runSetupChecks, type CommandRunner } from '../../core/setup/checks.ts';
+import { listDevices, probeRemoteXpcTunnel, readDeviceLockState, runSetupChecks, type CommandRunner } from '../../core/setup/checks.ts';
 import type { DeviceProfile } from '../../shared/contracts.ts';
 
 const profile: DeviceProfile = {
@@ -40,6 +40,18 @@ function lockStateKey(): string {
 
 test('reads CoreDevice lock state without changing the iPad', async () => {
   assert.deepEqual(await readDeviceLockState(profile.udid, runner({ [lockStateKey()]: lockedDevice })), { passcodeRequired: true, unlockedSinceBoot: true });
+});
+
+test('accepts only a healthy local RemoteXPC tunnel registry response', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ status: 'OK' }), { status: 200 })) as typeof fetch;
+    assert.equal(await probeRemoteXpcTunnel(), true);
+    globalThis.fetch = (async () => new Response(JSON.stringify({ status: 'DOWN' }), { status: 200 })) as typeof fetch;
+    assert.equal(await probeRemoteXpcTunnel(), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('distinguishes full Xcode from command-line tools', async () => {
@@ -93,6 +105,7 @@ test('never marks WDA or POS Home ready without a user-owned live session', asyn
   assert.equal(checks.find(check => check.id === 'wda.session')?.state, 'action');
   assert.equal(checks.find(check => check.id === 'pos.home')?.state, 'action');
   assert.equal(checks.find(check => check.id === 'device.unlocked')?.state, 'action');
+  assert.equal(checks.find(check => check.id === 'device.remote-xpc')?.state, 'action');
   assert.match(checks.find(check => check.id === 'device.unlocked')?.message ?? '', /locked/i);
 });
 

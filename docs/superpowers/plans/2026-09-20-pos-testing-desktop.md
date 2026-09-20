@@ -2,7 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
-**Status:** review draft. No implementation, dependency installation, device
+**Status:** implementation in progress. The localhost shell, OMS read browser,
+read-only native diagnostics and safety foundation are implemented. No device
 mutation, OMS configuration change or deployment is authorized by this document.
 
 **Goal:** Let HotWax teammates set up a Mac/iPad, select named tests and real

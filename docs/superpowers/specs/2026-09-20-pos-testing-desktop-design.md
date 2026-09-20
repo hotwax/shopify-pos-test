@@ -1,6 +1,9 @@
 # HotWax POS Testing Toolkit — localhost product and technical specification
 
-Status: **review draft, not approved for implementation**. Prepared 2026-09-19–20.
+Status: **implementation baseline**. The standalone localhost shell, read-only
+OMS browser, script catalog, coordinator and native read-only diagnostics are
+implemented; live mutation execution remains gated by the evidence listed in
+the compatibility documents. Prepared 2026-09-19–20.
 
 Companion: [phased implementation plan](../plans/2026-09-20-pos-testing-desktop.md).
 Existing foundation: [verified iPad smoke test](../../../README.md).
@@ -28,7 +31,8 @@ HotWax continues to test the unmodified App Store Shopify POS application.
 - Accept precise product, order, and location identifiers when users have them.
 - Design extension points for transfers, sales-order fulfillment, and BOPIS.
 - **First release: approved development/test stores only; real card payments blocked.**
-- This request is for a full reviewable spec/plan, not implementation.
+- The specification is the implementation contract; changes to the first
+  release must preserve its test-store-only, cash-only and fail-closed gates.
 
 ### Recommended defaults for this review
 
@@ -53,11 +57,13 @@ The later fulfillment/transfer workflows get separate domain specifications.
 
 ## 2. What exists, and what is still a proposal
 
-The current checkout at `9e64f6f` has Appium, XCUITest/WDA, WDIO/Mocha,
-TypeScript, a doctor command, local signing configuration, failure artifacts,
-and a real-device Home → Orders → first-order test. That test passed twice;
-29 unit tests and typecheck passed. It has no GUI, OMS session, data pickers,
-mutation workflows, structured run protocol, or a local-host GUI.
+The current checkout has the original Appium/XCUITest/WDA, WDIO/Mocha,
+TypeScript, doctor command, local signing configuration, failure artifacts and
+real-device Home → Orders → first-order test, plus the localhost Ionic/Vue
+shell, named script catalog, run coordinator, setup page, OMS login/data
+browser, read-only POS diagnostics and run history. The current proof is still
+read-only: mutation workflows have safety scaffolding and planning UI, but no
+live create/return/exchange transaction is claimed complete.
 
 | Existing asset | Reuse / change |
 | --- | --- |
@@ -270,9 +276,12 @@ limitations, so v1 excludes complex discounts/bundles until separately proven.
 
 ### 4.4 OMS Connections
 
-Fields: connection name and canonical instance URL. Detect supported login mode
-before showing credentials. Show environment, authenticated identity, expiry,
-permitted shops, connector/API compatibility, and separate read-capability checks.
+Fields: HotWax instance name and credentials. The app derives the canonical
+HTTPS origin (for example `test-maarg` → `https://test-maarg.hotwax.io`) and
+never asks ordinary users to edit an environment file for the target URL.
+Detect supported login mode before showing credentials. Show environment,
+authenticated identity, expiry, permitted shops, connector/API compatibility,
+and separate read-capability checks.
 
 Use BASIC login only for a backend that advertises it. A supported browser SSO
 flow must use the system browser and its real approved callback contract; do not

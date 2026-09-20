@@ -70,6 +70,16 @@ test('classifies UI-automation authorization as a user-owned blocked preconditio
   assert.equal(result.reason, 'ui-automation-authorization');
 });
 
+test('classifies a missing RemoteXPC tunnel as a blocked host precondition', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ios-testing-wda-'));
+  await writeFile(join(directory, 'wdio-appium.log'), 'RemoteXPC devices listing unavailable: Tunnel registry port not found. Please run the tunnel creation script first');
+  assert.deepEqual(await classifyWorkerFailure(directory), {
+    state: 'blocked',
+    reason: 'remote-xpc-tunnel-unavailable',
+    message: 'The iOS RemoteXPC tunnel is not running. Start it from a separate Terminal with `sudo appium driver run xcuitest tunnel-creation`, then start a fresh native run. The toolkit did not change iPad access settings.',
+  });
+});
+
 test('stops an owned worker promptly when the device lock is observed', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-'));
   const coordinator = createCoordinator({

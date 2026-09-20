@@ -46,6 +46,28 @@ export interface DeviceLockState {
   unlockedSinceBoot: boolean;
 }
 
+export type RemoteXpcTunnelProbe = () => Promise<boolean>;
+
+/**
+ * Read-only check for Appium's RemoteXPC tunnel registry. The registry is a
+ * host-side service; probing it never starts a tunnel, changes the iPad, or
+ * prompts for a password.
+ */
+export const probeRemoteXpcTunnel: RemoteXpcTunnelProbe = async () => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 750);
+  try {
+    const response = await fetch('http://127.0.0.1:42314/remotexpc/tunnels', { signal: controller.signal });
+    if (!response.ok) return false;
+    const body = await response.json() as { status?: unknown };
+    return body.status === 'OK';
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 /** Read-only CoreDevice preflight. This command never unlocks or changes the iPad. */
 export async function readDeviceLockState(udid: string, run: CommandRunner = command): Promise<DeviceLockState> {
   const output = await run('xcrun', ['devicectl', 'device', 'info', 'lockState', '--device', udid, '--timeout', '15', '--quiet', '--json-output', '-', '--omit-deprecated-fields-in-json']);
@@ -112,11 +134,24 @@ export async function runSetupChecks(profile: DeviceProfile, run: CommandRunner 
     const major = versionMajor(os);
     const osReady = major !== null && major >= 17 && major <= 27;
     checks.push(check('device.os', osReady ? 'ready' : 'unsupported', osReady ? `iPadOS ${os} is in the supported baseline.` : `iPadOS ${os || 'unknown'} is outside the supported baseline.`, osReady ? [] : ['Use a supported iPadOS version or update the compatibility matrix.']));
+
+    if (osReady && major !== null && major >= 18) {
+      const tunnelReady = await probeRemoteXpcTunnel();
+      checks.push(check(
+        'device.remote-xpc',
+        tunnelReady ? 'ready' : 'action',
+        tunnelReady ? 'The Appium RemoteXPC tunnel registry is available.' : 'The Appium RemoteXPC tunnel registry is not available for this iOS 18+ device.',
+        tunnelReady ? [] : ['In a separate Terminal, run `sudo appium driver run xcuitest tunnel-creation`, complete the Mac authorization if prompted, leave it running, then run setup checks again.'],
+      ));
+    } else if (osReady) {
+      checks.push(check('device.remote-xpc', 'ready', 'This iPadOS version uses the legacy device transport; a RemoteXPC tunnel is not required.'));
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     checks.push(check('device.pairing', 'action', `The selected iPad could not be read: ${message}`, ['Connect, unlock and trust the selected iPad.']));
     checks.push(check('device.developer', 'blocked', 'Developer Mode could not be verified.', ['Complete the Apple-owned device setup before continuing.']));
     checks.push(check('device.os', 'blocked', 'iPadOS could not be verified.', ['Reconnect the selected iPad and run setup checks again.']));
+    checks.push(check('device.remote-xpc', 'blocked', 'The device transport could not be classified.', ['Reconnect the selected iPad and run setup checks again.']));
   }
 
   try {

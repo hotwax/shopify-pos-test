@@ -42,7 +42,7 @@
       </ion-card>
 
       <ion-card v-if="connections.some(connection => connection.state === 'configured' || connection.state === 'expired') && activeConnection?.state !== 'connected'">
-        <ion-card-content><ion-note>Existing local connection records are available in this process. Enter the instance URL above to log in; the sidecar keeps the session only in memory.</ion-note></ion-card-content>
+        <ion-card-content><ion-note>Existing local connection records are available in this process. Enter the instance name above to log in; the app derives the HTTPS origin and the sidecar keeps the session only in memory.</ion-note></ion-card-content>
       </ion-card>
 
       <ion-card v-if="shops.length">

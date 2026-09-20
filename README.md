@@ -88,7 +88,18 @@ the supported workflow.
 5. Run `npm run doctor`. It reads host/device/signing state; it does not change
    settings, create certificates or install apps. A pass is a prerequisite
    check, not proof that WDA is provisioned or that POS automation works.
-6. Open WDA with `npx --no-install appium driver run xcuitest open-wda`. Select
+6. On iOS/iPadOS 18 and later, open a second Terminal and start Appium's
+   host-side RemoteXPC tunnel registry before running native tests:
+
+   ```sh
+   sudo appium driver run xcuitest tunnel-creation
+   ```
+
+   Complete the Mac authorization if prompted and leave this Terminal running.
+   This is a host transport prerequisite, not an iPad setting; the toolkit
+   only checks whether the local registry is available and never starts it or
+   asks for your password.
+7. Open WDA with `npx --no-install appium driver run xcuitest open-wda`. Select
    WebDriverAgentRunner, the connected iPad and your signing team. Use the
    bundle ID from `.env`, automatic signing, then Product → Test. Complete
    signing and developer-trust prompts yourself. Follow the official

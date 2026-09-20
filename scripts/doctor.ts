@@ -8,6 +8,7 @@ const requiredChecks = new Set([
   'device.pairing',
   'device.developer',
   'device.os',
+  'device.remote-xpc',
   'pos.installed',
   'signing.identity',
 ]);

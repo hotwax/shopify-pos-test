@@ -67,6 +67,13 @@ export async function classifyWorkerFailure(artifactDir: string): Promise<Worker
       message: 'The WDA developer certificate is not trusted on the iPad. Complete Apple’s trust step yourself, then start a fresh run. The toolkit did not change trust settings.',
     };
   }
+  if (/Tunnel registry port not found|RemoteXPC.*(?:not available|unavailable)|RemoteXPC upstream connect error/i.test(log)) {
+    return {
+      state: 'blocked',
+      reason: 'remote-xpc-tunnel-unavailable',
+      message: 'The iOS RemoteXPC tunnel is not running. Start it from a separate Terminal with `sudo appium driver run xcuitest tunnel-creation`, then start a fresh native run. The toolkit did not change iPad access settings.',
+    };
+  }
   return {
     state: 'failed',
     reason: 'worker-exited-without-structured-result',
