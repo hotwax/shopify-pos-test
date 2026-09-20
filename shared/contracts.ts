@@ -83,6 +83,7 @@ export interface RunRecord {
   id: string;
   state: RunState;
   effect: BusinessEffect;
+  statusMessage?: string;
   request: RunRequest;
   lastSequence: number;
   sourceHash: string;

@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { createCoordinator } from '../../core/runner/coordinator.ts';
+import { classifyWorkerFailure, createCoordinator } from '../../core/runner/coordinator.ts';
 import { spawn } from '../../core/runner/process.ts';
 import { isTerminalState } from '../../core/runner/protocol.ts';
 import type { RunRequest } from '../../shared/contracts.ts';
@@ -45,6 +45,24 @@ test('does not call a zero-exit child successful without a structured result', a
   const result = await coordinator.getRun(accepted.id);
   assert.equal(result.state, 'failed');
   assert.equal(result.effect, 'not-started');
+});
+
+test('classifies a locked iPad as a blocked precondition without changing access', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ios-testing-wda-'));
+  await writeFile(join(directory, 'wdio-appium.log'), 'Error Domain=com.apple.dt.deviceprep Code=-3 "Unlock iPad to Continue"');
+  assert.deepEqual(await classifyWorkerFailure(directory), {
+    state: 'blocked',
+    reason: 'device-locked',
+    message: 'The iPad is locked. Unlock it yourself, leave Shopify POS on Home, and start a fresh run. The toolkit did not change iPad access settings.',
+  });
+});
+
+test('classifies UI-automation authorization as a user-owned blocked precondition', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ios-testing-wda-'));
+  await writeFile(join(directory, 'wdio-appium.log'), 'Not authorized for performing UI testing actions');
+  const result = await classifyWorkerFailure(directory);
+  assert.equal(result.state, 'blocked');
+  assert.equal(result.reason, 'ui-automation-authorization');
 });
 
 test('accepts a structured worker result and exposes events to subscribers', async () => {

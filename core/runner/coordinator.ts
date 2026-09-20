@@ -23,6 +23,50 @@ interface ActiveRun {
   stopping: boolean;
 }
 
+export interface WorkerFailureClassification {
+  state: 'blocked' | 'failed';
+  reason: string;
+  message: string;
+}
+
+/**
+ * Converts known Apple/WDA precondition failures into an actionable blocked
+ * run. The log is inspected locally only; no raw Appium/Xcode output is
+ * returned to the browser because it can contain device or customer data.
+ */
+export async function classifyWorkerFailure(artifactDir: string): Promise<WorkerFailureClassification> {
+  let log = '';
+  try { log = (await readFile(join(artifactDir, 'wdio-appium.log'), 'utf8')).slice(-200_000); }
+  catch { /* a missing log remains a generic worker failure */ }
+
+  if (/Unlock .* to Continue|device is locked|device.*locked/i.test(log)) {
+    return {
+      state: 'blocked',
+      reason: 'device-locked',
+      message: 'The iPad is locked. Unlock it yourself, leave Shopify POS on Home, and start a fresh run. The toolkit did not change iPad access settings.',
+    };
+  }
+  if (/Not authorized for performing UI testing actions|UI testing actions/i.test(log)) {
+    return {
+      state: 'blocked',
+      reason: 'ui-automation-authorization',
+      message: 'Apple UI automation authorization is unavailable. Complete the Apple-owned authorization yourself, then start a fresh run. The toolkit did not change that setting.',
+    };
+  }
+  if (/Developer App Certificate is not trusted|certificate.*not trusted/i.test(log)) {
+    return {
+      state: 'blocked',
+      reason: 'developer-certificate-not-trusted',
+      message: 'The WDA developer certificate is not trusted on the iPad. Complete Apple’s trust step yourself, then start a fresh run. The toolkit did not change trust settings.',
+    };
+  }
+  return {
+    state: 'failed',
+    reason: 'worker-exited-without-structured-result',
+    message: 'The worker exited without a structured result. Review the local run artifact log before retrying.',
+  };
+}
+
 function stateEvent(record: RunRecord, state: RunRecord['state'], data: Record<string, unknown> = {}): RunEvent {
   return {
     protocolVersion: 1,
@@ -125,7 +169,8 @@ export class RunCoordinator {
     try { result = JSON.parse(await readFile(join(active.artifactDir, 'result.json'), 'utf8')) as { passed: boolean; message?: string }; }
     catch { /* no structured result is a failure, regardless of process exit */ }
     if (!result || typeof result.passed !== 'boolean') {
-      await this.append(current, stateEvent(current, 'failed', { reason: 'worker-exited-without-structured-result' }));
+      const classification = await classifyWorkerFailure(active.artifactDir);
+      await this.append(current, stateEvent(current, classification.state, { reason: classification.reason, message: classification.message }));
     } else {
       await this.append(current, stateEvent(current, result.passed ? 'passed' : 'failed', { message: result.message ?? 'Structured worker result received.' }));
     }

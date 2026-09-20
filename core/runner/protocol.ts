@@ -68,6 +68,10 @@ export function applyRunEvent(record: RunRecord, input: RunEvent): RunRecord {
   if (event.type === 'run-state') {
     const state = event.data.state;
     if (typeof state !== 'string' || !validStates.has(state as RunRecord['state'])) throw new Error('Invalid run state.');
+    if (event.data.message !== undefined && (typeof event.data.message !== 'string' || event.data.message.length > 500)) {
+      throw new Error('Invalid run status message.');
+    }
+    if (typeof event.data.message === 'string') next.statusMessage = event.data.message;
     if (state === 'interrupted' || state === 'cancelled') {
       if (next.effect === 'attempted' || next.effect === 'unknown') {
         next.state = 'needs-reconciliation';
