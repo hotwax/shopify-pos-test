@@ -106,24 +106,49 @@ These are recommendations;
 new package versions must be compatibility-tested and locked during the build.
 Keep the proven Appium/XCUITest versions until a deliberate upgrade is validated.
 
-The repository exposes two local lifecycle modes:
+The term “sidecar” describes the internal Node control-plane module; it is not
+a second application that teammates manage. In normal `./run.sh`/serve mode,
+the Node server, browser asset host, API, run coordinator and local storage run
+inside one Node process. Only developer hot-reload mode introduces a Vite child
+process, and the supervisor owns that process lifecycle.
 
-- `npm run dev` starts one supervisor that launches the sidecar, waits for its
-  health check, starts Vite with an API proxy, and opens the localhost URL. A
-  single interrupt stops only the processes owned by this invocation.
-- `npm run build && npm run start` builds the browser assets and starts the
-  sidecar in local-serve mode, where the same Node process serves the static UI
-  and `/api` routes from loopback. Ordinary users do not need to start Appium
-  or a second terminal manually; Xcode, iPad trust/signing and POS login remain
-  explicit external prerequisites.
+The repository exposes one normal user launch command and one developer mode:
+
+- `./run.sh` is the documented teammate command from the repository root. On
+  first use it checks Node/npm, installs the locked dependencies if needed,
+  builds missing browser assets, starts the one-process local host and opens the
+  localhost URL. Later runs reuse the installed dependencies and start quickly.
+- `npm run dev` is maintainer-only development mode: a supervisor launches the
+  sidecar, waits for health, starts Vite with an API proxy, and opens the browser.
+  A single interrupt stops only the processes owned by this invocation.
+- `npm run build` followed by `npm run start` is the underlying local-serve mode:
+  one Node process serves the static UI, `/api` routes and run-event stream from
+  loopback. Ordinary users do not need to start Appium or a second terminal
+  manually; Xcode, iPad trust/signing and POS login remain explicit external
+  prerequisites.
 
 `npm run build` itself remains a finite artifact-producing command; it must not
 leave a server or device process running when invoked by CI. The auto-start
 behavior belongs to the dev/serve launcher that runs the local app.
 
-No new OMS database entities are proposed for desktop settings or run history.
+No new OMS database entities are proposed for local settings or run history.
 Do not turn local test execution into OMS service jobs. Reuse the OMS connector
 only for authenticated, authorized data access and later read-only assertions.
+
+### Standalone repository boundary
+
+This is a standalone monolithic application in the `iosTesting` repository. It
+is not an AccxUI app, does not join the AccxUI workspace, does not import
+AccxUI components/composables, and does not require another repository to build
+or run. The application ships its own Ionic/Vue UI, Node server, catalog,
+runner, storage and setup checks. AccxUI source may be consulted as a protocol
+reference for OMS login behavior, but it is not a runtime dependency or a build
+input.
+
+In normal use, one root-level command starts one Node process that serves the
+browser UI and API from localhost. The internal folders remain separated for
+testability, but users do not start separate frontend/backend services or
+assemble a multi-repository workspace.
 
 ## 4. Navigation and page specification
 
@@ -347,7 +372,7 @@ manifests and displays newly added tests without a GUI rebuild. Before execution
 it resolves the registered entry point inside that workspace, validates schemas,
 records source/lockfile hashes and uses the trusted workspace's compatible runner.
 Changes to executable test code invalidate prior trust/approval for that revision.
-Packaged built-ins remain available without a checkout.
+Built-in scenarios remain available when a trusted external workspace is not selected.
 
 Trust is explicit: TypeScript tests execute with the user's OS permissions, like
 running `npm run test:orders`. Process isolation is not a sandbox for hostile
@@ -379,12 +404,12 @@ permission. No authenticated instance request was made for this planning task.
 
 | Design element | Existing source / proposed delta | Verdict |
 | --- | --- | --- |
-| Discover login mode and BASIC login | `hotwax-maarg-util/service/admin.rest.xml:12–19`; `accxui/common/composables/useAuth.ts:90–118,229–278` | NATIVE contract precedent; desktop adapter needed |
+| Discover login mode and BASIC login | `hotwax-maarg-util/service/admin.rest.xml:12–19`; `accxui/common/composables/useAuth.ts:90–118,229–278` | NATIVE contract precedent; localhost adapter needed |
 | List connector shops | `mantle-shopify-connector/service/sob.rest.xml:50–63`, entity `co.hotwax.shopify.ShopifyShop` | NATIVE entity-list route; verify authorization and response field minimization |
 | Read Shopify GraphQL using OMS credentials | `service/shopify.rest.xml:82–85`; `ShopifyHelperServices.xml:172–279` | NATIVE service; live authentication/shop authorization UNVERIFIED |
 | Existing shop/location mappings | `sob.rest.xml:66–68`, `co.hotwax.shopify.ShopifyShopLocation`; fresh Shopify locations via GraphQL | NATIVE for metadata; do not equate a cached mapping with current device location |
 | Cross-user/shop access isolation | Not established by inspected generic GraphQL service | UNVERIFIED; mandatory gate before enabling the data browser |
-| Desktop settings, catalog, run history | Local application concerns, not OMS business entities | NEW local records; no OMS schema changes proposed |
+| Local settings, catalog, run history | Local application concerns, not OMS business entities | NEW local records; no OMS schema changes proposed |
 
 Pinned source references:
 
@@ -422,7 +447,7 @@ Test missing/expired credentials and another user's shop explicitly. Review
 framework/instance artifact permissions and current/open backend work before
 declaring a missing facility.
 
-The desktop exposes named read operations, never raw query text from the
+The localhost app exposes named read operations, never raw query text from the
 renderer or manifests. Parse GraphQL and allow only approved query documents;
 bounded variables/cursors are the only configurable inputs. If the selected
 OMS lacks a safe authenticated/scoped route, block that capability and create
@@ -711,8 +736,9 @@ Slices C–E require approved test fixtures and real device evidence, not mocks.
 
 ## 13. Acceptance criteria
 
-1. A teammate can complete setup with actionable instructions and no routine
-   terminal editing; unavoidable Apple prompts are explicit and never bypassed.
+1. A teammate can open Terminal in the installed checkout, run `./run.sh`, and
+   complete setup with actionable instructions and no routine terminal editing;
+   unavoidable Apple prompts are explicit and never bypassed.
 2. JSON added to the approved catalog appears by name, validates its inputs and
    runs the matching reviewed scenario without bespoke GUI changes.
 3. The existing smoke passes through both CLI and GUI; missing setup is reported

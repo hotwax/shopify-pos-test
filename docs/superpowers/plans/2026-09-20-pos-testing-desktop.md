@@ -9,11 +9,12 @@ mutation, OMS configuration change or deployment is authorized by this document.
 Shopify data, run approved test-store POS workflows and inspect truthful results
 from a browser app served on localhost.
 
-**Architecture:** Ionic Vue served by Vite/local Node HTTP, a localhost Node
-sidecar with named HTTP/SSE routes, local profiles/run journals, an OMS-mediated
-read-only Shopify adapter, and one owned WDIO/Appium/WDA runner. Keep the existing
-CLI and native POS test helpers. A single supervisor starts the sidecar and Vite
-in development; local-serve mode lets the sidecar serve the built UI itself.
+**Architecture:** One standalone Node application serves the Ionic Vue UI and
+named HTTP/SSE API from localhost in normal use. It owns local profiles/run
+journals, an OMS-mediated read-only Shopify adapter, and one WDIO/Appium/WDA
+runner. Keep the existing CLI and native POS test helpers. A developer-only
+supervisor can start Vite with the Node host for hot reload; teammates use the
+root `./run.sh` command, which starts the one-process local host.
 
 **Tech Stack:** Vue 3, Ionic Vue, Vite, TypeScript, Node HTTP/Fastify (selected
 and locked in Task 2), Vue Router, Pinia, JSON Schema/Ajv, decimal.js for
@@ -36,7 +37,8 @@ versions are selected/locked in Task 2, not asserted compatible in advance.
 - Unknown device/shop/location/tender/eligibility blocks mutation before commit.
 - New POS selectors require actual native-screen inspection; no invented IDs/coordinate fallback.
 - The browser UI talks only to a loopback sidecar API; it never receives Node privileges or talks to Appium directly.
-- `npm run dev` owns sidecar/Vite startup and cleanup; `npm run build` is finite and never starts a server.
+- `./run.sh` is the normal teammate entry point from the repository root; it owns dependency/bootstrap checks, local-host startup and cleanup.
+- `npm run dev` is maintainer-only Vite development mode; `npm run build` is finite and never starts a server.
 - The sidecar binds to `127.0.0.1` only, rejects unapproved Host/Origin values, and uses a per-launch local session token for state-changing routes.
 - Product code changes occur only after spec/plan approval; backend changes/deployments require their own scope.
 - Each delivered slice requires real-device or real-OMS evidence appropriate to its claim.
@@ -87,7 +89,7 @@ can be solved by a fixed amount of coding.
 
 | Area | Files |
 | --- | --- |
-| Local host | `server/index.ts`, `server/app.ts`, `server/routes.ts`, `server/session.ts`, `scripts/dev.ts`, `vite.config.ts` |
+| Local host | `run.sh`, `server/index.ts`, `server/app.ts`, `server/routes.ts`, `server/session.ts`, `scripts/dev.ts`, `vite.config.ts` |
 | GUI | `ui/App.vue`, `ui/router.ts`, `ui/api.ts`, `ui/pages/{Setup,Scripts,ScriptDetail,Pos,Connections,Runs,RunDetail}.vue` |
 | Shared contracts | `shared/contracts.ts`, `shared/script.schema.json`, `shared/run-event.schema.json`, `shared/http.schema.json` |
 | Catalog | `core/catalog/{load,trust,validate}.ts`, `scripts/catalog/*.json`, `test/scenarios/registry.ts` |
@@ -101,9 +103,11 @@ can be solved by a fixed amount of coding.
 | Verification | `core/verification/{shopify,results}.ts`; OMS verifier added only with its verified contract |
 | Tests/docs | `test/unit/*.test.ts`, `test/browser/*.test.ts`, `test/browser/*.spec.ts`, `test/specs/*.spec.ts`, `docs/contracts/`, `docs/compatibility.md` |
 
-Preserve existing files unless a listed task requires a scoped refactor. Do not
-link this application into AccxUI's multi-app build or copy its complete auth
-store; adapt only the inspected protocol patterns into this standalone project.
+Preserve existing files unless a listed task requires a scoped refactor. This
+application is standalone: do not link it into AccxUI's multi-app build, import
+AccxUI components/composables, or require the AccxUI repository to build or run.
+Use inspected AccxUI auth behavior only as a protocol reference and implement
+the required adapter inside this repository.
 
 Test-file ownership makes the task boundaries explicit:
 
@@ -257,6 +261,7 @@ package/lock/tsconfig.
 - `verifyWorkspaceTrust(root: string, revision: string): Promise<boolean>`
 - Browser gets immutable catalog metadata; scenario modules load only in a trusted run.
 - `startLocalHost(mode: 'dev' | 'serve'): Promise<{ url: string; close(): Promise<void> }>`
+- `run.sh` performs the user-facing prerequisite/build checks, then delegates to `npm run start`.
 - `createApiServer(options: { port: number; mode: 'dev' | 'serve' }): Promise<ServerHandle>`
 - `createLocalSession(): { token: string; origin: string; expiresAt: string }`
 
@@ -295,7 +300,8 @@ assert.throws(() => validateScript({ ...smoke, parameters: { extra: true } }, re
   packages on the task branch. Preserve existing pinned device dependencies.
   Configure Vite to proxy only `/api` to `127.0.0.1:8128` during development;
   no browser route may proxy arbitrary origins.
-- [ ] Implement the sidecar bootstrap: bind API to `127.0.0.1:8128`, serve
+- [ ] Implement the sidecar bootstrap: bind API to `127.0.0.1:8128` in dev mode
+  and the combined local-host port in serve mode, serve
   `/api/health`, create one per-launch session token, enforce allowed Host/Origin
   values and the custom token header, set restrictive CSP/no-store headers, and
   expose only named routes. Add PID/lock metadata so a second supervisor reports
@@ -305,6 +311,12 @@ assert.throws(() => validateScript({ ...smoke, parameters: { extra: true } }, re
   `127.0.0.1:8127`, open the browser URL, forward SIGINT/SIGTERM, and terminate
   only child processes it created. In serve mode, let the sidecar serve built
   assets and API from one loopback port.
+- [ ] Add an executable root `run.sh` for non-maintainers. It must resolve its
+  own repository directory, check the supported Node/npm versions, run `npm ci`
+  only when dependencies are absent, run the finite build when build output is
+  missing or stale, then `exec npm run start -- --open`. It must print one clear
+  remediation for missing Node/Xcode and never pass credentials or arbitrary
+  user input into a shell command.
 - [ ] Add browser launch tests proving sidebar routes render and hostile script
   names/API text are escaped. Assert browser code has no Node/child-process/file
   primitives, cross-origin requests fail, missing/invalid session tokens are
@@ -693,6 +705,7 @@ Proposed additions owned by the indicated tasks:
 | `npm run dev` | 2 | Start the loopback sidecar, Vite UI and browser together |
 | `npm run build` | 2 | Build finite browser/server assets without starting processes |
 | `npm run start` | 10 | Serve built UI/API from the local Node sidecar |
+| `./run.sh` | 10 | Idiot-proof teammate bootstrap and one-process local-host launch |
 | `npm run test:ui` | 2 | Vitest component/UI contract tests |
 | `npm run test:browser` | 2–4 | Playwright localhost shell/API/workflow tests |
 | `npm run test:script -- --id <id>` | 3 | Same catalog/coordinator as GUI |

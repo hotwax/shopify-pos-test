@@ -1,12 +1,53 @@
 # iosTesting
 
-Read-only Shopify POS smoke test for a physical iPad. HotWax owns these scripts;
-Shopify POS stays the unmodified App Store app. Only the separate open-source
+Standalone HotWax Shopify POS testing toolkit for a physical iPad. This is its
+own monolithic repository and application; it is **not an AccxUI app**, does not
+join the AccxUI workspace, and does not require AccxUI to build or run.
+
+The target application is one Node process started from this repository. It
+serves the Ionic/Vue browser interface and its localhost API, then owns the
+Appium/WDA test runner, OMS reads, local run history and safety checks. Shopify
+POS stays the unmodified App Store app. Only the separate open-source
 WebDriverAgent (WDA) helper is built and signed.
 
 **Status: the scripted Home → Orders → first order test has passed on a real iPad.**
 The test reads native accessibility identifiers and order text through WDA;
 it does not need Device Hub, image recognition, Shopify source code or binaries.
+
+## Start the application
+
+The browser GUI described in the design documents is not implemented in this
+checkout yet. The current verified capability is the command-line smoke test
+described below. The planned teammate launch command, once the GUI foundation is
+implemented, is `./run.sh` from this repository's root.
+
+When that launcher exists, the complete teammate workflow will be:
+
+1. Open **Finder**.
+2. Press **Command+Shift+G**.
+3. Enter `~/Documents/GitHub/iosTesting` and press **Return**.
+4. Right-click the `iosTesting` folder, choose **Services → New Terminal at
+   Folder**. If that menu is unavailable, open **Terminal** with Command+Space
+   and run:
+
+   ```sh
+   cd ~/Documents/GitHub/iosTesting
+   ```
+
+5. Run:
+
+   ```sh
+   ./run.sh
+   ```
+
+6. Keep that Terminal window open. The launcher will check prerequisites, build
+   the local app when needed, start the single localhost process and open the
+   browser. Press **Control+C** in that same Terminal window to stop it.
+
+Do not start AccxUI, a separate frontend, a separate backend, or a manually
+started Appium server for the finished toolkit. Xcode, iPad trust/signing,
+Developer Mode, POS sign-in and any OMS login remain explicit setup steps inside
+the supported workflow.
 
 ## Setup
 
