@@ -1,4 +1,4 @@
-# HotWax POS Testing Toolkit — product and technical specification
+# HotWax POS Testing Toolkit — localhost product and technical specification
 
 Status: **review draft, not approved for implementation**. Prepared 2026-09-19–20.
 
@@ -32,7 +32,8 @@ HotWax continues to test the unmodified App Store Shopify POS application.
 
 ### Recommended defaults for this review
 
-- Installable Mac desktop application, Ionic Vue + TypeScript + Electron.
+- Localhost web application, Ionic Vue + TypeScript, with a Node sidecar that
+  starts with the local development/serve command.
 - One active run and one explicitly selected iPad per Mac. No parallel device farm.
 - English POS UI and a documented supported layout/version matrix initially.
 - Cash-only new-order tender and cash-only eligible refund/exchange balances.
@@ -56,7 +57,7 @@ The current checkout at `9e64f6f` has Appium, XCUITest/WDA, WDIO/Mocha,
 TypeScript, a doctor command, local signing configuration, failure artifacts,
 and a real-device Home → Orders → first-order test. That test passed twice;
 29 unit tests and typecheck passed. It has no GUI, OMS session, data pickers,
-mutation workflows, structured run protocol, or installable desktop package.
+mutation workflows, structured run protocol, or a local-host GUI.
 
 | Existing asset | Reuse / change |
 | --- | --- |
@@ -74,33 +75,51 @@ authentication is claimed verified by this proposal. Those are explicit build ga
 
 | Option | Advantages | Cost / limitation | Decision |
 | --- | --- | --- | --- |
-| Ionic Vue + Electron | Familiar UI; Node-based tooling; desktop dialogs; managed child processes; normal app launch | Larger package; signing/notarization and runtime packaging must be maintained | **Recommended** |
-| Ionic Vue in a browser + localhost Node service | Fast developer prototype; same UI skills | Users must start a local service; browser cannot itself run Xcode/Appium; additional localhost security boundary | Alternative if installable packaging is deferred |
+| Ionic Vue in a browser + localhost Node service | Familiar UI; reuses Node/Appium tooling; one local command can start the UI and sidecar; easy browser inspection | Requires Node/Xcode prerequisites; browser cannot itself run Xcode/Appium; localhost security boundary must be designed | **Recommended** |
+| Ionic Vue + Electron | Desktop shell and managed child process lifecycle | Larger package; signing/notarization; duplicates a Node runtime; not needed while the product is intentionally localhost-only | Deferred alternative |
 | Tauri + Vue | Smaller desktop shell | Introduces Rust and still needs a Node/Appium sidecar; less reuse of the proven stack | Not preferred for this team/tool |
 
-Ionic supplies the interface, not physical-iPad control. Electron supplies the
-Mac application boundary; Appium/WDA still control POS. Ionic supports Vue-based
-web/desktop interfaces; Electron Forge provides packaging/signing tooling.
-[Ionic Vue](https://ionicframework.com/vue),
-[Electron Forge](https://www.electronforge.io/core-concepts/why-electron-forge).
+Ionic supplies the browser interface, not physical-iPad control. The Node
+sidecar is the local Mac control plane: it owns Appium/WDA, OMS sessions, run
+journals and safety checks. The browser calls only the sidecar's named localhost
+API; Appium/WDA still control the installed POS application.
+[Ionic Vue](https://ionicframework.com/vue).
 
 ```text
-Ionic Vue renderer: setup / scripts / POS / connections / runs
-             │ typed, validated Electron IPC
-Electron main: profiles, secrets, trusted catalog, run coordinator
+Browser at http://127.0.0.1:8127: setup / scripts / POS / connections / runs
+             │ same-origin JSON API + SSE run events
+Node sidecar at http://127.0.0.1:8128: profiles, session secrets, catalog,
+             │ run coordinator, safety policy, journals and evidence
              ├── read-only OMS adapter ── OMS Shopify connector ── Shopify GraphQL
-             ├── run journal / evidence on this Mac
-             └── one isolated runner child
+             └── one owned runner child
                        └── WDIO → Appium → signed WDA → installed Shopify POS
 ```
 
-Reuse Vue Router, Pinia for transient UI state, JSON Schema + Ajv for manifests
-and parameters, decimal.js for monetary comparisons, the existing WDIO/Mocha
-stack for device execution, Node's test runner for pure/backend modules,
-Vitest/Vue Test Utils for components, and
-Playwright's Electron support for desktop-shell tests. These are recommendations;
+Use Vite to serve the Ionic Vue site during development and a Node HTTP server
+to serve the built site in local-serve mode. Use Fastify (or the project's
+equivalent typed Node HTTP framework selected during implementation) for named
+sidecar routes, JSON Schema + Ajv for manifests and request validation, decimal.js
+for monetary comparisons, the existing WDIO/Mocha stack for device execution,
+Node's test runner for pure/backend modules, Vitest/Vue Test Utils for components,
+and Playwright against the real localhost browser site for end-to-end UI tests.
+These are recommendations;
 new package versions must be compatibility-tested and locked during the build.
 Keep the proven Appium/XCUITest versions until a deliberate upgrade is validated.
+
+The repository exposes two local lifecycle modes:
+
+- `npm run dev` starts one supervisor that launches the sidecar, waits for its
+  health check, starts Vite with an API proxy, and opens the localhost URL. A
+  single interrupt stops only the processes owned by this invocation.
+- `npm run build && npm run start` builds the browser assets and starts the
+  sidecar in local-serve mode, where the same Node process serves the static UI
+  and `/api` routes from loopback. Ordinary users do not need to start Appium
+  or a second terminal manually; Xcode, iPad trust/signing and POS login remain
+  explicit external prerequisites.
+
+`npm run build` itself remains a finite artifact-producing command; it must not
+leave a server or device process running when invoked by CI. The auto-start
+behavior belongs to the dev/serve launcher that runs the local app.
 
 No new OMS database entities are proposed for desktop settings or run history.
 Do not turn local test execution into OMS service jobs. Reuse the OMS connector
@@ -232,14 +251,16 @@ permitted shops, connector/API compatibility, and separate read-capability check
 
 Use BASIC login only for a backend that advertises it. A supported browser SSO
 flow must use the system browser and its real approved callback contract; do not
-embed an arbitrary login page with privileged Electron APIs. Until that contract
+embed an arbitrary login page with privileged server-side forwarding. Until that contract
 is verified, show “This login method is not supported yet,” not a password form.
 
 The app signs into OMS, **not directly into Shopify**. Shopify credentials stay
 on OMS. Save connection metadata locally. OMS passwords are never persisted;
-keep access tokens in main-process memory by default. Optional Remember session
-uses OS-backed encrypted storage, fails closed if unavailable, and clears on
-logout. The renderer receives connection status/data, never stored token values.
+keep access tokens in the Node sidecar's memory by default. The browser receives
+connection status/data, never stored token values. A sidecar restart clears all
+sessions in v1; an optional macOS Keychain adapter can be added only after its
+native dependency and logout/rotation behavior are verified. There is no
+plaintext local-storage fallback.
 
 Switching connection, user or shop cancels in-flight reads, discards old picker
 pages and selections, and invalidates pending run approval. Do not switch during
@@ -273,8 +294,8 @@ There is no promise of rollback or instant safe pause in the middle of payment.
 Recommended repository additions:
 
 ```text
-desktop/                    Electron main + constrained preload
-ui/                         Ionic Vue pages/components
+server/                     Node sidecar, named HTTP routes and process control
+ui/                         Ionic Vue pages/components served from localhost
 core/
   catalog/                  manifest validation and discovery
   setup/                    diagnostic checks and onboarding state
@@ -287,7 +308,7 @@ scripts/catalog/            one committed JSON definition per named test
 test/scenarios/             reviewed scenario registry and implementations
 test/screens/               native POS helpers, existing code retained
 test/unit/                  pure/core regression tests
-test/desktop/               component and Electron tests
+test/browser/               component and localhost-browser tests
 test/specs/                 real-iPad WDIO scenario entry points
 docs/                       onboarding, contracts and compatibility evidence
 ```
@@ -532,7 +553,7 @@ Coordinator rules:
   environment, never a shell-interpolated command. Do not pass passwords/tokens
   in process arguments, environment, manifests or logs.
 - The runner receives scoped immutable parameters. Any later API verification
-  uses the main-process read adapter; it need not receive an OMS token.
+  uses the sidecar's read adapter; it need not receive an OMS token.
 - Use a versioned structured event stream, sequence numbers, run ID and step ID.
   Do not scrape human-readable console strings into statuses. WDIO reporter/hooks
   supply test lifecycle; scenario steps supply business checkpoints.
@@ -608,8 +629,8 @@ and use a separately verified HotWax order/import mapping; no invented OMS API.
 Use versioned JSON files and append-only JSONL initially; one coordinator writes
 them. No database service/SQLite dependency is necessary for this scale. Rebuild
 the lightweight history index from run summaries if it is corrupted; preserve
-original events. Store under Electron's application data directory, not inside
-the signed app bundle or committed repository. Support a user-selected artifact
+original events. Store under a sidecar-owned per-user data directory, not inside
+the built site or committed repository. Support a user-selected artifact
 directory with path containment checks and restrictive file permissions.
 
 Retain evidence locally until the user deletes it; display disk usage and offer
@@ -619,47 +640,58 @@ and are not guaranteed redactable automatically; require an explicit choice and
 preview before including them in an export. Do not print raw page source or tokens
 into ordinary logs. Evidence cleanup is separate from business-record cleanup.
 
-Use Electron's supported `safeStorage` API for optional token persistence, with
-macOS Keychain-backed protection; app signing identity affects key continuity.
-If protection is unavailable, offer session-only login, never plaintext fallback.
-[Electron safeStorage](https://www.electronjs.org/docs/latest/api/safe-storage).
+The sidecar binds to `127.0.0.1` only and rejects non-loopback Host/Origin
+headers. The browser UI and API use the same origin in local-serve mode; the
+development Vite origin is the only additional allowlisted origin. Mutating and
+credential-bearing routes require an unguessable per-launch local session token
+in a custom header plus the expected Origin. Do not accept credentials in query
+strings, URLs, process arguments or logs. A sidecar restart invalidates the
+token and clears in-memory OMS sessions.
 
-Renderer restrictions: Node integration off, context isolation and sandbox on,
-strict content security policy, no remote privileged web content. Validate IPC
-sender and every argument; expose named methods, not generic file/shell/network
-access. Escape all script/API content. Validate external links and OMS origin;
-reject credential-bearing URLs, redirects to unapproved origins and non-HTTPS
-remote endpoints. Explicit local developer profiles may permit loopback HTTP,
-but never production-network credential forwarding.
-[Electron security guidance](https://www.electronjs.org/docs/latest/tutorial/security).
+The browser has no privileged Node access: it cannot read files, spawn commands,
+open arbitrary URLs or reach Appium directly. Expose named JSON endpoints and a
+server-sent-event run stream, never a generic shell, file, network proxy or raw
+GraphQL endpoint. Validate every request body and path against schemas; escape
+all script/API content; validate external links and OMS origins; reject
+credential-bearing URLs, redirects to unapproved origins and non-HTTPS remote
+endpoints. Explicit local developer profiles may permit loopback HTTP, but never
+production-network credential forwarding. Add a strict content security policy
+to the served UI and disable caching for session/bootstrap responses.
 
-## 11. Packaging and support model
+For v1, OMS credentials and tokens exist only in sidecar memory. If persistent
+sessions become necessary, implement and test a separate macOS Keychain adapter;
+never fall back to plaintext storage.
 
-Use Electron Forge. First prove the development build, then package a Mac app
-with a tested Node runner, pinned Appium/driver and WDA source resources. Do not
-assume Electron's embedded Node version can run every CLI dependency unchanged.
-Never run `npm install` during an ordinary user's test. Xcode, Apple account,
-device trust, UI Automation and POS sign-in remain external prerequisites.
+## 11. Local-host support model
+
+There is no Electron shell or desktop installer in v1. The repository is the
+deliverable: each teammate installs the supported Node runtime and Xcode once,
+clones the approved checkout, runs `npm ci`, and uses `npm run dev` or the built
+local-serve command. The supervisor starts the sidecar and browser development
+server together, waits for health, opens the local URL, and owns cleanup. A
+second invocation detects the existing sidecar/session and fails with a clear
+message rather than attaching to another user's runner.
+
+`npm run build` creates browser assets only. `npm run start` serves those assets
+and the API from the sidecar on loopback. Never run `npm install` during an
+ordinary test. Xcode, Apple account, device trust, UI Automation and POS sign-in
+remain external prerequisites.
 
 Build WDA from a writable per-user cache keyed by toolchain/device/signing
-configuration, not from inside a sealed `.app`/ASAR. No redistribution of this
-Mac's development certificate, provisioning profile, private key, UDID or `.env`.
+configuration. No redistribution of this Mac's development certificate,
+provisioning profile, private key, UDID or `.env`. The sidecar must not load
+secrets from the browser build output.
 
 Ship Apple Silicon first, matching the current proof; add Intel only after a
-separate packaged-runtime/device acceptance pass. A “works for anyone with a Mac
-and iPad” release requires a second clean Mac/iPad onboarding test, not just this
-developer checkout. Windows/Linux are explicitly unsupported.
+separate local-host/device acceptance pass. A “works for anyone with a Mac and
+iPad” release requires a second clean Mac/iPad onboarding test, including Node
+installation and local permissions, not just this developer checkout.
+Windows/Linux are explicitly unsupported in v1.
 
-Desktop distribution signing/notarization and WDA device signing are different
-concerns. Budget a team-owned Apple distribution identity for a smooth installer;
-personal-team WDA provisioning can remain a documented pilot option with its
-renewal limitations. No promise of a frictionless unsigned public installer.
-[Electron Forge macOS signing](https://www.electronforge.io/guides/code-signing/code-signing-macos).
-
-Keep updates manual in v1. A later signed updater must preserve settings, trust,
-run records and compatibility. Install newer toolchain versions only after a
-real-device regression pass. No subscriptions, hosted backend or AI API is required
-for local GUI execution itself.
+Keep updates manual in v1. A later signed installer or launch agent must preserve
+settings, trust, run records and compatibility, but is not required for the first
+team pilot. No subscription, hosted backend or AI API is required for local GUI
+execution itself.
 
 ## 12. Delivery slices and release gates
 
@@ -670,7 +702,7 @@ for local GUI execution itself.
 | C. Cash order | Configure and create one approved test-store order from POS | Reliable POS context and cash/summary checkpoints; exact read-back, uncertain-outcome handling |
 | D. Return | Select eligible fixture lines, quantity/restock controls, cash refund | Partial/full eligible cases and duplicate/consumed fixture rejection |
 | E. Exchanges | Equal/collect/refund-difference workflows | Pro/permission gate and all three balance paths proven independently |
-| F. Team release | Packaged installer and novice onboarding | Second clean Mac/iPad, signing/renewal and interrupted-run recovery acceptance |
+| F. Team release | Localhost checkout and novice onboarding | Second clean Mac/iPad, Node/Xcode prerequisites and interrupted-run recovery acceptance |
 | Later | Transfers, sales fulfillment, BOPIS fulfillment, richer OMS assertions | Separate workflow contracts and permissions; reuse runner/catalog/data boundaries |
 
 Do not build every screen around fake data and defer the first device connection
@@ -697,7 +729,7 @@ Slices C–E require approved test fixtures and real device evidence, not mocks.
    absent from JSON, source snapshots, logs, process arguments and default exports.
 9. A failed downstream assertion preserves the confirmed POS result and offers
    read-only re-verification, not another sale/refund.
-10. A second teammate completes packaged setup and repeats the supported tests
+10. A second teammate completes localhost setup and repeats the supported tests
     without the original developer's local keys, build caches or shell environment.
 
 ## 14. Honesty ledger and review decisions
@@ -717,7 +749,7 @@ Known open evidence gates, each with an explicit build outcome:
   behavior need live characterization, not inferred selectors or API-created proof.
 - Schema validation performed here is not target-OMS compatibility or a live
   Shopify call. The runtime API version may differ from current public docs.
-- Long lists, other languages/layouts, Intel packaging and additional OS/POS
+- Long lists, other languages/layouts, Intel local-host support and additional OS/POS
   combinations remain outside the verified baseline until their matrix passes.
 
 Source-level concerns intentionally not repaired during planning: the generic
@@ -728,7 +760,8 @@ instead of silently changing unrelated backends or replacing working POS code.
 
 ### Decisions requested in this review
 
-1. Accept Ionic Vue + Electron as the recommended Mac delivery approach?
+1. Accept Ionic Vue in the browser with an auto-started localhost Node sidecar
+   as the recommended Mac delivery approach?
 2. Accept the A→F sequence, with the existing read-only test as the first GUI milestone?
 3. Accept cash-only, ordinary non-bundle/single-currency transaction coverage first,
    with complex payments/discounts and future domains added separately?

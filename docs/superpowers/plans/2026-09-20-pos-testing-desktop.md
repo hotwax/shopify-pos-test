@@ -1,4 +1,4 @@
-# HotWax POS Testing Desktop Implementation Plan
+# HotWax POS Testing Localhost Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
@@ -7,17 +7,19 @@ mutation, OMS configuration change or deployment is authorized by this document.
 
 **Goal:** Let HotWax teammates set up a Mac/iPad, select named tests and real
 Shopify data, run approved test-store POS workflows and inspect truthful results
-from a small desktop GUI.
+from a browser app served on localhost.
 
-**Architecture:** Ionic Vue inside Electron, a typed main/preload boundary,
-local profiles/run journals, an OMS-mediated read-only Shopify adapter, and one
-owned WDIO/Appium/WDA runner. Keep the existing CLI and native POS test helpers.
+**Architecture:** Ionic Vue served by Vite/local Node HTTP, a localhost Node
+sidecar with named HTTP/SSE routes, local profiles/run journals, an OMS-mediated
+read-only Shopify adapter, and one owned WDIO/Appium/WDA runner. Keep the existing
+CLI and native POS test helpers. A single supervisor starts the sidecar and Vite
+in development; local-serve mode lets the sidecar serve the built UI itself.
 
-**Tech Stack:** Vue 3, Ionic Vue, TypeScript, Electron + Electron Forge, Vue
-Router, Pinia, JSON Schema/Ajv, decimal.js for monetary comparisons, existing
-WDIO/Mocha/Appium/XCUITest/WDA, Node test runner, Vitest/Vue Test Utils and
-Playwright Electron tests. Exact new versions are selected/locked in Task 2,
-not asserted compatible in advance.
+**Tech Stack:** Vue 3, Ionic Vue, Vite, TypeScript, Node HTTP/Fastify (selected
+and locked in Task 2), Vue Router, Pinia, JSON Schema/Ajv, decimal.js for
+monetary comparisons, existing WDIO/Mocha/Appium/XCUITest/WDA, Node test runner,
+Vitest/Vue Test Utils and Playwright browser tests against localhost. Exact new
+versions are selected/locked in Task 2, not asserted compatible in advance.
 
 **Spec:** [product and technical specification](../specs/2026-09-20-pos-testing-desktop-design.md).
 
@@ -33,6 +35,9 @@ not asserted compatible in advance.
 - Credentials never enter Git, manifests, process arguments, runner environment or ordinary logs.
 - Unknown device/shop/location/tender/eligibility blocks mutation before commit.
 - New POS selectors require actual native-screen inspection; no invented IDs/coordinate fallback.
+- The browser UI talks only to a loopback sidecar API; it never receives Node privileges or talks to Appium directly.
+- `npm run dev` owns sidecar/Vite startup and cleanup; `npm run build` is finite and never starts a server.
+- The sidecar binds to `127.0.0.1` only, rejects unapproved Host/Origin values, and uses a per-launch local session token for state-changing routes.
 - Product code changes occur only after spec/plan approval; backend changes/deployments require their own scope.
 - Each delivered slice requires real-device or real-OMS evidence appropriate to its claim.
 
@@ -68,7 +73,7 @@ not asserted compatible in advance.
                                            ↓
                                  9 Three exchange paths [Slice E]
                                            ↓
-                                10 Packaged pilot [Slice F]
+                                10 Local-host pilot [Slice F]
 ```
 
 Task 1 has separate read-only GUI, OMS and mutation-context evidence gates.
@@ -82,9 +87,9 @@ can be solved by a fixed amount of coding.
 
 | Area | Files |
 | --- | --- |
-| Desktop shell | `desktop/main.ts`, `desktop/preload.ts`, `desktop/ipc.ts`, `forge.config.ts` |
-| GUI | `ui/App.vue`, `ui/router.ts`, `ui/pages/{Setup,Scripts,ScriptDetail,Pos,Connections,Runs,RunDetail}.vue` |
-| Shared contracts | `shared/contracts.ts`, `shared/script.schema.json`, `shared/run-event.schema.json` |
+| Local host | `server/index.ts`, `server/app.ts`, `server/routes.ts`, `server/session.ts`, `scripts/dev.ts`, `vite.config.ts` |
+| GUI | `ui/App.vue`, `ui/router.ts`, `ui/api.ts`, `ui/pages/{Setup,Scripts,ScriptDetail,Pos,Connections,Runs,RunDetail}.vue` |
+| Shared contracts | `shared/contracts.ts`, `shared/script.schema.json`, `shared/run-event.schema.json`, `shared/http.schema.json` |
 | Catalog | `core/catalog/{load,trust,validate}.ts`, `scripts/catalog/*.json`, `test/scenarios/registry.ts` |
 | Setup | `core/setup/{checks,profiles}.ts`, retained `scripts/doctor.ts` wrapper |
 | Execution | `core/runner/{coordinator,process,lock,protocol,approval}.ts`, `test/support/{reporter,context}.ts` |
@@ -94,7 +99,7 @@ can be solved by a fixed amount of coding.
 | Native workflows | `test/screens/{context,cart,payment,returns,exchanges}.ts`, matching `.selectors.ts`, `test/scenarios/*.ts` |
 | Parameters/pickers | `ui/components/{ParameterForm,VariantPicker,OrderPicker,LocationPicker,RunReview,StepTimeline}.vue` |
 | Verification | `core/verification/{shopify,results}.ts`; OMS verifier added only with its verified contract |
-| Tests/docs | `test/unit/*.test.ts`, `test/desktop/*.test.ts`, `test/desktop/*.spec.ts`, `test/specs/*.spec.ts`, `docs/contracts/`, `docs/compatibility.md` |
+| Tests/docs | `test/unit/*.test.ts`, `test/browser/*.test.ts`, `test/browser/*.spec.ts`, `test/specs/*.spec.ts`, `docs/contracts/`, `docs/compatibility.md` |
 
 Preserve existing files unless a listed task requires a scoped refactor. Do not
 link this application into AccxUI's multi-app build or copy its complete auth
@@ -105,19 +110,19 @@ Test-file ownership makes the task boundaries explicit:
 | Task | Tests created or extended |
 | --- | --- |
 | 1 | Existing `test/specs/open-first-order.spec.ts`; evidence-only baseline, no replacement proof |
-| 2 | `test/unit/catalog.test.ts`, `test/unit/ipc-policy.test.ts`, `test/desktop/shell.spec.ts` |
+| 2 | `test/unit/catalog.test.ts`, `test/unit/http-policy.test.ts`, `test/unit/launcher.test.ts`, `test/browser/shell.spec.ts` |
 | 3 | `test/unit/run-state.test.ts`, `test/unit/run-storage.test.ts`, `test/unit/process-ownership.test.ts` |
-| 4 | `test/unit/setup-checks.test.ts`, `test/desktop/setup.test.ts`, `test/desktop/scripts.test.ts`, `test/desktop/run-detail.test.ts` |
-| 5 | `test/unit/oms-auth.test.ts`, `test/unit/oms-reads.test.ts`, `test/desktop/data-pickers.test.ts`, `test/contracts/oms-read.test.ts` |
+| 4 | `test/unit/setup-checks.test.ts`, `test/browser/setup.test.ts`, `test/browser/scripts.test.ts`, `test/browser/run-detail.test.ts` |
+| 5 | `test/unit/oms-auth.test.ts`, `test/unit/oms-reads.test.ts`, `test/browser/data-pickers.test.ts`, `test/contracts/oms-read.test.ts` |
 | 6 | `test/unit/transaction-policy.test.ts`, `test/unit/money.test.ts`, `test/unit/commit-checkpoint.test.ts`, `test/specs/pos-context.spec.ts` |
-| 7 | `test/unit/order-verifier.test.ts`, `test/desktop/pos-create.test.ts`, `test/specs/create-cash-order.spec.ts` |
+| 7 | `test/unit/order-verifier.test.ts`, `test/browser/pos-create.test.ts`, `test/specs/create-cash-order.spec.ts` |
 | 8 | `test/unit/return-eligibility.test.ts`, `test/unit/fixture-plan.test.ts`, `test/specs/return-cash-order.spec.ts` |
 | 9 | `test/unit/exchange-policy.test.ts`, `test/specs/exchange-cash-order.spec.ts` |
-| 10 | `test/unit/runtime-resolver.test.ts`, `test/desktop/packaged.spec.ts` |
+| 10 | `test/unit/runtime-resolver.test.ts`, `test/browser/local-host.spec.ts` |
 
 For a pure unit file, the focused RED/GREEN command is
 `node --import tsx --test test/unit/<named-file>.test.ts`; the exact names are in
-the table. New UI/Electron commands in the validation section own those runners.
+the table. New UI/browser commands in the validation section own those runners.
 Real-OMS contract tests stay outside the default unit glob and require explicit
 test-instance configuration. Real-device specs run only with their approved
 parameters and selected fixture; never include mutating cases in an unattended
@@ -126,7 +131,7 @@ default command.
 ## Shared contracts to establish in Task 2
 
 These are proposed TypeScript interfaces for the build. They are not existing
-exports. Use JSON Schema at IPC/file boundaries; TypeScript alone is insufficient.
+exports. Use JSON Schema at HTTP/file boundaries; TypeScript alone is insufficient.
 
 ```ts
 export type Effect = 'read-only' | 'create-order' | 'return' | 'exchange';
@@ -182,17 +187,24 @@ export interface Page<T> { items: T[]; nextCursor: string | null }
 Each event type has its own closed runtime payload schema; the abbreviated
 `data` type above is not permission to accept arbitrary fields. Persist
 `lastSequence` with the summary and reconstruct it when replaying the journal.
-Run requests from the renderer contain proposed selections, not trusted identity:
-main re-resolves the connection/user/shop/version and compares the proposal.
+Run requests from the browser contain proposed selections, not trusted identity:
+the sidecar re-resolves the connection/user/shop/version and compares the proposal.
 
-IPC operations: `setup.listDevices`, `setup.check`, `setup.prepareWda`,
+Named HTTP operations: `GET /api/health`, `GET /api/setup/devices`,
+`POST /api/setup/check`, `POST /api/setup/prepare-wda`,
 `catalog.list`, `catalog.get`, `catalog.savePreset`, `connections.login`,
 `connections.status`, `connections.logout`, `data.searchVariants`,
 `data.searchOrders`, `data.listLocations`, `runs.start`, `runs.requestStop`,
 `runs.approveCheckpoint`, `runs.list`, `runs.get`, `runs.verifyAgain` and
-`artifacts.exportSelected`. Every handler validates sender and payload, derives
-trusted filesystem/origin/entry-point values itself and returns sanitized data.
-No generic `exec`, `readFile`, arbitrary URL proxy or raw IPC forwarder.
+`artifacts.exportSelected`; run events use `GET /api/runs/:runId/events` as an
+SSE stream. Every handler validates Origin/session token/payload, derives trusted
+filesystem/origin/entry-point values itself and returns sanitized data. No generic
+`exec`, `readFile`, arbitrary URL proxy or raw GraphQL forwarder.
+
+The browser client has one typed `ui/api.ts` wrapper for these operations. It
+does not construct URLs from user input or call a sidecar route directly from
+page components. The Vite development server proxies `/api` to `127.0.0.1:8128`;
+local-serve mode serves the UI and API from the sidecar on `127.0.0.1:8127`.
 
 ## Task 1: Establish compatibility and unresolved contracts
 
@@ -231,17 +243,22 @@ POS identity method, native workflow stages and supported tender/capabilities.
   each enabled capability has an observed contract; remaining gaps have a
   named dependent task and fail-closed UI behavior, not fabricated endpoints.
 
-## Task 2: Typed catalog, trust boundary and desktop shell
+## Task 2: Typed catalog, localhost sidecar and browser shell
 
 **Files:** create `shared/contracts.ts`, schemas, `core/catalog/{load,trust,validate}.ts`,
-`test/scenarios/registry.ts`, `scripts/catalog/open-first-order.json`, shell files,
-`ui/App.vue`, `ui/router.ts`, catalog/IPC unit tests; modify package/lock/tsconfig.
+`test/scenarios/registry.ts`, `scripts/catalog/open-first-order.json`,
+`server/{index,app,routes,session,static}.ts`, `scripts/dev.ts`, `vite.config.ts`,
+`ui/App.vue`, `ui/router.ts`, `ui/api.ts`, catalog/HTTP/launcher tests; modify
+package/lock/tsconfig.
 
 **Interfaces:**
 - `validateScript(input: unknown, registry: ScenarioDescriptor[]): ScriptDefinition`
 - `loadCatalog(root: string): Promise<{ scripts: ScriptDefinition[]; errors: string[] }>`
 - `verifyWorkspaceTrust(root: string, revision: string): Promise<boolean>`
-- Renderer gets immutable catalog metadata; scenario modules load only in a trusted run.
+- Browser gets immutable catalog metadata; scenario modules load only in a trusted run.
+- `startLocalHost(mode: 'dev' | 'serve'): Promise<{ url: string; close(): Promise<void> }>`
+- `createApiServer(options: { port: number; mode: 'dev' | 'serve' }): Promise<ServerHandle>`
+- `createLocalSession(): { token: string; origin: string; expiresAt: string }`
 
 - [ ] Write catalog tests before implementation. Use the existing smoke definition
   as the positive fixture and actual literal assertions for negative cases:
@@ -274,16 +291,28 @@ assert.throws(() => validateScript({ ...smoke, parameters: { extra: true } }, re
   manifest changed after review, symlink escaping the folder, duplicate catalog
   IDs, malformed JSON and untrusted folder all disable execution. Scanning
   metadata must not import a TypeScript module or execute an install hook.
-- [ ] Install/lock mutually compatible Ionic/Vue/Electron/Forge packages on the
-  task branch. Preserve existing pinned device dependencies. Register a local
-  app protocol; enable renderer isolation/sandbox/CSP and a narrow preload API.
-- [ ] Add desktop launch tests proving sidebar routes render and hostile script
-  names/API text are escaped. Assert privileged Node/IPC primitives are absent
-  from the renderer and invalid IPC senders/payloads are rejected.
+- [ ] Install/lock mutually compatible Ionic/Vue/Vite and Node HTTP framework
+  packages on the task branch. Preserve existing pinned device dependencies.
+  Configure Vite to proxy only `/api` to `127.0.0.1:8128` during development;
+  no browser route may proxy arbitrary origins.
+- [ ] Implement the sidecar bootstrap: bind API to `127.0.0.1:8128`, serve
+  `/api/health`, create one per-launch session token, enforce allowed Host/Origin
+  values and the custom token header, set restrictive CSP/no-store headers, and
+  expose only named routes. Add PID/lock metadata so a second supervisor reports
+  the existing owner instead of attaching to it.
+- [ ] Implement `scripts/dev.ts` as the only two-process development launcher:
+  start the sidecar, poll health with a bounded timeout, start Vite on
+  `127.0.0.1:8127`, open the browser URL, forward SIGINT/SIGTERM, and terminate
+  only child processes it created. In serve mode, let the sidecar serve built
+  assets and API from one loopback port.
+- [ ] Add browser launch tests proving sidebar routes render and hostile script
+  names/API text are escaped. Assert browser code has no Node/child-process/file
+  primitives, cross-origin requests fail, missing/invalid session tokens are
+  rejected, and launcher cleanup does not kill unrelated processes.
 - [ ] Create the read-only script catalog entry and a registry mapping to the
   existing spec. Do not rewrite the test into JSON steps. Verify additions are
   discoverable without executing them and invalid entries show an inline reason.
-- [ ] Run unit tests, `npm run typecheck`, component tests and a shell-launch test;
+- [ ] Run unit tests, `npm run typecheck`, component tests and a localhost launch test;
   commit this independently testable catalog/shell slice. The GUI does not yet
   claim device execution until Task 3.
 
@@ -335,12 +364,12 @@ assert.equal(applyRunEvent(record, event).effect, 'unknown');
   no-reset/no-alert/zero-whole-test-retry protections and depth 62.
   Test an explicit source inclusion list: `.env`, signing assets, credentials,
   other runs and unrelated checkout files must never enter the snapshot.
-- [ ] Use WDIO lifecycle hooks/custom reporter for versioned IPC events. Map the
+- [ ] Use WDIO lifecycle hooks/custom reporter for versioned child-process events. Map the
   existing smoke steps to readable labels. Capture failures without replacing
   the original error. Never infer business success solely from process exit.
 - [ ] Test cooperative stop before action, forced stop of a hung owned child,
   app restart with unfinished run, no replay after restart, and event replay
-  after renderer reload. Check that raw stdout/stderr is bounded/redacted.
+  after browser reload. Check that raw stdout/stderr is bounded/redacted.
 - [ ] Retain `npm run test:orders`; route it through the same coordinator/lock as
   GUI execution. Add a general `npm run test:script -- --id <catalog-id>` command
   with the same policy checks, not a GUI-only guard.
@@ -352,7 +381,7 @@ assert.equal(applyRunEvent(record, event).effect, 'unknown');
 
 **Files:** `core/setup/{checks,profiles}.ts`, `core/storage/profiles.ts`,
 `ui/pages/{Setup,Scripts,ScriptDetail,Runs,RunDetail}.vue`, shared UI components,
-setup/desktop tests; modify `scripts/doctor.ts`, desktop IPC and README.
+setup/browser tests; modify `scripts/doctor.ts`, sidecar routes and README.
 
 **Interfaces:**
 - `listDevices(): Promise<{ udid: string; name: string; model: string; os: string }[]>`
@@ -373,9 +402,9 @@ setup/desktop tests; modify `scripts/doctor.ts`, desktop IPC and README.
 - [ ] Implement script filtering/detail/configuration and run views from real
   catalog/coordinator events. Add Stop wording that distinguishes “requested”
   from “stopped” and warns that stopping does not undo a transaction.
-- [ ] Add UI tests for keyboard navigation, focus/error announcements, loading/
+- [ ] Add browser tests for keyboard navigation, focus/error announcements, loading/
   empty/error distinctions, offline state, clipped content boundaries and
-  renderer restart reconnecting to the current run. Use desktop-sized Ionic
+  browser restart/reload reconnecting to the current run. Use desktop-sized Ionic
   lists/split navigation, not stretched phone screens.
 - [ ] Run the GUI on the actual Mac: select the iPad, complete readiness, open
   the smoke by name, run it from Home and inspect a matching detail/result.
@@ -387,7 +416,7 @@ setup/desktop tests; modify `scripts/doctor.ts`, desktop IPC and README.
 
 **Gate:** Task 1's authenticated/scoped target-instance contract is verified.
 **Files:** `core/oms/{auth,client,operations,capabilities,cache}.ts`, query documents,
-`ui/pages/Connections.vue`, three pickers, OMS/IPC/component tests,
+`ui/pages/Connections.vue`, three pickers, OMS/HTTP/component tests,
 `docs/contracts/oms-read-adapter.md`.
 
 **Interfaces:**
@@ -476,10 +505,10 @@ assert.throws(() => exchangeDirection({ amount: 'NaN', currency: 'USD' }));
 - [ ] Add durable pre-commit checkpoint and final summary comparison. Test
   cancellation/exit at the boundary with a harmless process harness; later
   workflow tasks prove actual POS behavior. Prevent new approval from reviving
-  an already attempted unknown transaction.
-  `recordCommitAttempt` resolves only after the coordinator has durably flushed
-  and acknowledged the checkpoint. Assert that journal failure, lost IPC and
-  missing acknowledgement prevent the irreversible tap, not merely log an error.
+  an already attempted unknown transaction. `recordCommitAttempt` resolves only
+  after the coordinator has durably flushed and acknowledged the checkpoint.
+  Assert that journal failure, lost worker protocol and missing acknowledgement
+  prevent the irreversible tap, not merely log an error.
 - [ ] Verify GUI and CLI both call the same policy gate, and POS-only assertion
   mode is refused for a mutating scenario. Commit after unit/type/context proof.
 
@@ -495,7 +524,7 @@ verified selector modules, `scripts/catalog/create-cash-order.json`,
 - `verifyShopifyOrder(context: TargetContext, orderGid: string, expected: CreateOrderParameters): Promise<{ passed: boolean; checks: { name: string; passed: boolean }[] }>`
 - Define the following `ScenarioContext` in `test/support/context.ts` before the
   workflow consumes it. Its correlation request goes over owned worker IPC to
-  the main-process read adapter. The worker receives sanitized identities, not
+  the sidecar read adapter. The worker receives sanitized identities, not
   an OMS token or arbitrary network proxy.
 
 ```ts
@@ -594,38 +623,45 @@ selectors, three catalog templates, exchange forms and amount/eligibility tests.
   all earlier smoke/order/return tests remain green on separate fixtures. Record
   tested Pro/location/POS versions and commit Slice E.
 
-## Task 10: Packaged team pilot and operator documentation
+## Task 10: Local-host team pilot and operator documentation
 
-**Files:** `forge.config.ts`, `scripts/package-runtime.ts`, packaged resource
-manifest, onboarding/troubleshooting docs, `test/desktop/packaged.spec.ts`,
-runtime compatibility matrix; update README and scripts.
+**Files:** `scripts/dev.ts`, `server/static.ts`, runtime compatibility matrix,
+onboarding/troubleshooting docs, `test/browser/local-host.spec.ts`, `test/unit/runtime-resolver.test.ts`;
+update README, package scripts and lockfile only as required.
 
-**Interfaces:** packaged resource manifest names exact Node/Appium/driver/WDA
-versions, hashes and paths; the runtime resolver returns executable/read-only
-resource/writable-cache directories without depending on a developer shell PATH.
+**Interfaces:** `resolveRuntime(): { node: string; appium: string; wdaCache: string }`;
+`startLocalHost(mode: 'dev' | 'serve'): Promise<{ url: string; close(): Promise<void> }>`;
+the launcher returns only the loopback URL and never exposes credentials or
+child-process arguments to the browser.
 
-- [ ] Test resource resolution first: installed path with spaces, read-only app
-  bundle, no system Node/npm, unsupported architecture, unavailable keychain,
-  expired WDA provisioning, denied native prompt and cache invalidation after update.
-- [ ] Package the proven Node runner and pinned dependencies with Forge. Keep
-  editable WDA projects/DerivedData in per-user caches; never modify a signed app
-  bundle, reuse the original developer's profiles or download executable code on run.
-- [ ] Sign/notarize through a team-approved distribution process. Do not expose
-  signing credentials to renderer or commit them. Until a signed pilot is ready,
-  label developer builds accurately and do not recommend disabling OS protections.
-- [ ] Run packaged Electron tests and the real test suite on a second clean Mac
-  and iPad. The pilot tester follows only the GUI/help: set up Xcode/trust/signing,
-  sign in, select actual data, create a saved script and inspect a completed run.
+- [ ] Test runtime checks first: supported Node version, Apple Silicon, checkout
+  path with spaces, missing `npm ci`, missing Xcode, unavailable WDA cache,
+  expired provisioning, denied native prompt, occupied UI/API/Appium ports and
+  stale supervisor lock. A missing prerequisite must produce an actionable setup
+  result, not a partially started runner.
+- [ ] Implement `npm run build` as a finite browser/server build that writes the
+  static assets and compiled sidecar resources without starting a server, Appium
+  or WDA. Implement `npm run start` as the one-process local-serve mode on
+  `127.0.0.1:8127`, serving the UI, `/api` and SSE routes from the sidecar.
+- [ ] Keep editable WDA projects/DerivedData in per-user caches; never modify the
+  repository's built assets at run time, load `.env` into the browser bundle,
+  reuse another user's profiles, or download executable code on a test run.
+- [ ] Run browser/local-host tests and the real test suite on a second clean Mac
+  and iPad. The pilot tester follows only the GUI/help: install Node/Xcode,
+  clone the approved checkout, run `npm ci`, launch `npm run dev`, complete
+  trust/signing/POS setup, create a saved script and inspect a completed run.
   Record where assistance was required and fix those onboarding gaps.
-- [ ] Exercise USB disconnect, window close, app crash/reopen, stale run record,
-  occupied ports and unavailable OMS. Prove no auto-replay and readable recovery.
+- [ ] Exercise USB disconnect, browser close/reload, sidecar crash/reopen, stale
+  run record, occupied ports and unavailable OMS. Prove no auto-replay, no
+  attachment to another sidecar and readable recovery after reconnect.
 - [ ] Demonstrate preset import/export, retained local evidence, explicit deletion
   of selected local evidence only, redacted summary export and session logout.
   Do not delete/refund created business fixtures as an implicit cleanup operation.
-- [ ] Publish an exact support matrix and known limits. Run unit/type/component/
-  Electron/device checks, request independent whole-change review, fix blocking
-  findings and retain evidence. Distribution/GitHub publication requires Aditya's
-  separate instruction; a packaged local pilot is not an authorized public release.
+- [ ] Publish an exact Node/Xcode/macOS/iPad/POS support matrix and known limits.
+  Run unit/type/component/browser/device checks, request independent whole-change
+  review, fix blocking findings and retain evidence. GitHub publication or a
+  future signed installer requires Aditya's separate instruction; the local-host
+  pilot is not an authorized public release.
 
 ## Future-domain extension contract
 
@@ -654,13 +690,14 @@ Proposed additions owned by the indicated tasks:
 
 | Command | Added in | Purpose |
 | --- | --- | --- |
-| `npm run desktop:dev` | 2 | Start local Electron/Ionic development build |
+| `npm run dev` | 2 | Start the loopback sidecar, Vite UI and browser together |
+| `npm run build` | 2 | Build finite browser/server assets without starting processes |
+| `npm run start` | 10 | Serve built UI/API from the local Node sidecar |
 | `npm run test:ui` | 2 | Vitest component/UI contract tests |
-| `npm run test:desktop` | 2–4 | Playwright Electron shell/IPC/workflow tests |
+| `npm run test:browser` | 2–4 | Playwright localhost shell/API/workflow tests |
 | `npm run test:script -- --id <id>` | 3 | Same catalog/coordinator as GUI |
 | `npm run test:oms-contract` | 5 | Explicitly configured real-instance read-only validation |
-| `npm run desktop:package` | 10 | Local packaged runtime |
-| `npm run desktop:make` | 10 | Approved signed distribution artifact |
+| `npm run check:runtime` | 10 | Validate local Node/Xcode/WDA prerequisites |
 
 These commands do not exist yet. For each implementation task, run the smallest
 test first and observe its intended failure, implement the change, then run its
@@ -683,11 +720,11 @@ evidence stays local and ignored; sanitized summaries can be committed.
 | Test-store/cash-only policy | 1, 6, 7, 8, 9 |
 | Truthful outcomes, cancellation and recovery | 3, 4, 6, 7, 8, 9, 10 |
 | Local evidence, reproducibility, trust and privacy | 2, 3, 5, 10 |
-| Team onboarding/package | 4, 10 |
+| Team onboarding/local-host support | 4, 10 |
 | Later transfers/fulfillment/BOPIS | Future-domain contract, separate implementation approval |
 
 Review this package as a proposed architecture and delivery sequence. Approve or
-adjust the desktop approach, scope and order before product code changes.
+adjust the localhost/sidecar approach, scope and order before product code changes.
 
 Recommended execution after approval: **native/in-session implementation in
 small delivery slices, with an independent review at each released slice**.
