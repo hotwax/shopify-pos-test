@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.inspect-order-actions",
+  "name": "Inspect order actions",
+  "description": "Open the first Shopify POS order detail and capture whether the current build exposes its Return or exchange action without opening that workflow.",
+  "domain": "shopify-pos",
+  "scenario": "pos.inspect-order-actions",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["diagnostic", "read-only", "order-detail", "returns"]
+}

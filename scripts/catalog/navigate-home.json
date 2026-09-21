@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.navigate-home",
+  "name": "Return POS to Home",
+  "description": "Use the observed Shopify POS Home tab to return from a read-only screen without resetting the app or changing store data.",
+  "domain": "shopify-pos",
+  "scenario": "pos.navigate-home",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["utility", "read-only", "navigation"]
+}

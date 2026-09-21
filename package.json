@@ -1,0 +1,62 @@
+{
+  "name": "hotwax-ios-testing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || ^22.12.0 || >=24.0.0",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "test": "npm run test:unit && npm run typecheck && npm run build && npm run test:shell",
+    "test:unit": "node --import tsx --test test/unit/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build",
+    "dev": "tsx scripts/dev.ts",
+    "start": "tsx server/index.ts",
+    "test:shell": "node --import tsx --test test/browser/*.spec.ts",
+    "doctor": "tsx scripts/doctor.ts",
+    "test:orders": "node --import tsx scripts/run-test.ts --id pos.open-first-order",
+    "test:inspect": "node --import tsx scripts/run-test.ts --id pos.inspect-screen",
+    "test:inspect-cart": "node --import tsx scripts/run-test.ts --id pos.inspect-cart",
+    "test:inspect-product-search": "node --import tsx scripts/run-test.ts --id pos.inspect-product-search",
+    "test:inspect-order-actions": "node --import tsx scripts/run-test.ts --id pos.inspect-order-actions",
+    "test:inspect-return-surface": "node --import tsx scripts/run-test.ts --id pos.inspect-return-surface",
+    "test:return-home": "node --import tsx scripts/run-test.ts --id pos.navigate-home",
+    "test:inspect-location": "node --import tsx scripts/run-test.ts --id pos.inspect-location",
+    "test:inspect-store-context": "node --import tsx scripts/run-test.ts --id pos.inspect-store-context",
+    "test:script": "node --import tsx scripts/run-test.ts"
+  },
+  "devDependencies": {
+    "@types/mocha": "10.0.10",
+    "@types/node": "26.6.2",
+    "@vitejs/plugin-vue": "6.0.9",
+    "@wdio/appium-service": "9.31.9",
+    "@wdio/cli": "9.31.9",
+    "@wdio/globals": "9.31.3",
+    "@wdio/local-runner": "9.31.9",
+    "@wdio/mocha-framework": "9.31.9",
+    "@wdio/spec-reporter": "9.31.2",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "appium": "3.7.0",
+    "appium-xcuitest-driver": "12.12.6",
+    "chrome-ide-trace": "^0.1.1",
+    "dotenv": "18.0.1",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2",
+    "vite": "8.3.0"
+  },
+  "dependencies": {
+    "@ionic/vue": "9.0.4",
+    "@ionic/vue-router": "9.0.4",
+    "pinia": "^4.0.3",
+    "vue": "3.5.43",
+    "vue-router": "4.6.4"
+  },
+  "overrides": {
+    "chrome-ide-trace": {
+      "vite": "$vite"
+    }
+  }
+}

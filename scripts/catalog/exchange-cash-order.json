@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.exchange-cash-order",
+  "name": "Exchange a cash order",
+  "description": "Exchange exact eligible lines in an approved cash-only Shopify POS test order and verify the collect, even or refund result through OMS read-back.",
+  "domain": "shopify-pos",
+  "scenario": "pos.exchange-cash-order",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos-shopify-oms",
+  "tags": ["mutation", "exchange", "cash", "test-store"]
+}

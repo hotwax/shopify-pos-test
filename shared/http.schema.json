@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hotwax.co/ios-testing/http.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "ok": { "type": "boolean" },
+    "mode": { "type": "string", "enum": ["dev", "serve", "test"] },
+    "sessionToken": { "type": "string", "minLength": 20, "maxLength": 200 },
+    "scripts": { "type": "array", "maxItems": 1000 }
+  }
+}

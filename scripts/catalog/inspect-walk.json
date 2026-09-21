@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.inspect-walk",
+  "name": "Discovery walk (read-only)",
+  "description": "Discovery only. Captures whatever Shopify POS is showing, then performs the requested non-committing taps one at a time, capturing the accessibility tree and a screenshot after each. Refuses any control whose label reads like a committing action. Leaves POS where it stops.",
+  "domain": "shopify-pos",
+  "scenario": "pos.inspect-walk",
+  "scenarioVersion": 1,
+  "parameters": { "steps": [] },
+  "assertionMode": "pos",
+  "tags": ["diagnostic", "read-only", "discovery"]
+}

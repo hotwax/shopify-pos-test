@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.inspect-screen",
+  "name": "Inspect current POS screen",
+  "description": "Read-only native accessibility snapshot of the current Shopify POS screen; performs no taps or navigation.",
+  "domain": "shopify-pos",
+  "scenario": "pos.inspect-screen",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["diagnostic", "read-only", "accessibility"]
+}

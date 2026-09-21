@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.inspect-return-surface",
+  "name": "Inspect return and exchange surface",
+  "description": "Open the observed Return or exchange surface for the first order or one explicitly supplied POS order reference without selecting a line or committing a return or exchange, then capture its native accessibility tree.",
+  "domain": "shopify-pos",
+  "scenario": "pos.inspect-return-surface",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["diagnostic", "read-only", "returns", "exchanges"]
+}

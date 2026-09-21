@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.inspect-cart",
+  "name": "Inspect empty POS cart",
+  "description": "Read-only confirmation that Shopify POS Home has an empty cart; does not open checkout or change POS state.",
+  "domain": "shopify-pos",
+  "scenario": "pos.inspect-cart",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["diagnostic", "read-only", "cart"]
+}

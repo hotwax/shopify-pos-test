@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hotwax.co/ios-testing/script.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "description", "domain", "scenario", "scenarioVersion", "parameters", "assertionMode", "tags"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$", "maxLength": 100 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "description": { "type": "string", "minLength": 1, "maxLength": 1000 },
+    "domain": { "type": "string", "const": "shopify-pos" },
+    "scenario": { "type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$", "maxLength": 100 },
+    "scenarioVersion": { "type": "integer", "minimum": 1, "maximum": 1000 },
+    "parameters": { "type": "object", "maxProperties": 50 },
+    "assertionMode": { "enum": ["pos", "pos-shopify", "pos-shopify-oms"] },
+    "tags": { "type": "array", "minItems": 0, "maxItems": 20, "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,39}$" }, "uniqueItems": true }
+  }
+}

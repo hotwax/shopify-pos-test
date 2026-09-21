@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.inspect-product-results",
+  "name": "Inspect product search results",
+  "description": "Discovery only. Opens Shopify POS product search, types a broad term, and captures the result list so the add-to-cart contract can be identified. No item is purchased.",
+  "domain": "shopify-pos",
+  "scenario": "pos.inspect-product-results",
+  "scenarioVersion": 1,
+  "parameters": { "search": "a" },
+  "assertionMode": "pos",
+  "tags": ["diagnostic", "product-search", "discovery"]
+}

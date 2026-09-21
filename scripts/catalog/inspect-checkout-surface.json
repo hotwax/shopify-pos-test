@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.inspect-checkout-surface",
+  "name": "Inspect checkout surface",
+  "description": "Discovery only. Adds one $1.00 custom sale line so the checkout and tender surfaces become reachable, captures them, and stops before any payment. No order is created; clear the cart in POS afterwards.",
+  "domain": "shopify-pos",
+  "scenario": "pos.inspect-checkout-surface",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["diagnostic", "checkout", "discovery"]
+}

@@ -1,0 +1,19 @@
+import { defineConfig } from 'vite';
+import vue from '@vitejs/plugin-vue';
+import { ideTraceVue } from 'chrome-ide-trace/vite';
+
+export default defineConfig({
+  plugins: [ideTraceVue(), vue()],
+  server: {
+    host: '127.0.0.1',
+    port: 8127,
+    strictPort: true,
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8128',
+        changeOrigin: false,
+      },
+    },
+  },
+  build: { outDir: 'dist', emptyOutDir: true },
+});

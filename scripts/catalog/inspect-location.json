@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.inspect-location",
+  "name": "Inspect POS location",
+  "description": "Read the current Shopify POS location from More → Settings and return to Home without changing settings or store data.",
+  "domain": "shopify-pos",
+  "scenario": "pos.inspect-location",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["diagnostic", "read-only", "context", "location"]
+}
