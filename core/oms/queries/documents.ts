@@ -36,6 +36,14 @@ export const searchOrdersQuery = `query SearchOrders($first: Int!, $after: Strin
   }
 }`;
 
+// One reviewed document serves every order read-back. Returns, refunds and
+// fulfillments ride along because a return run has to prove restock type,
+// return reason and the refund's own tender, and the planner has to know which
+// lines POS will actually offer (only fulfilled ones are returnable).
+// `returns` and `returnLineItems` are connections, `refunds` is a plain list,
+// and `fulfillmentLineItem` lives only on the concrete ReturnLineItem, so the
+// inline fragment is required. All of this was validated against the live OMS
+// proxy on 2026-09-21 at apiVersion 2026-01.
 export const resolveOrderQuery = `query ResolveOrder($id: ID!, $lineFirst: Int!, $lineAfter: String) {
   order(id: $id) {
     id legacyResourceId name displayFinancialStatus displayFulfillmentStatus paymentGatewayNames
@@ -57,6 +65,29 @@ export const resolveOrderQuery = `query ResolveOrder($id: ID!, $lineFirst: Int!,
       }
     }
     totalPriceSet { shopMoney { amount currencyCode } }
+    returnStatus
+    fulfillments(first: 25) {
+      id status
+      fulfillmentLineItems(first: 50) { nodes { quantity lineItem { id } } }
+    }
+    returns(first: 20) {
+      nodes {
+        id name status totalQuantity
+        returnLineItems(first: 50) {
+          nodes {
+            id quantity returnReason returnReasonNote customerNote
+            ... on ReturnLineItem { fulfillmentLineItem { lineItem { id } } }
+          }
+        }
+      }
+      pageInfo { hasNextPage }
+    }
+    refunds(first: 20) {
+      id createdAt
+      totalRefundedSet { shopMoney { amount currencyCode } }
+      refundLineItems(first: 50) { nodes { quantity restockType lineItem { id } } }
+      transactions(first: 20) { nodes { id kind status gateway amountSet { shopMoney { amount currencyCode } } } }
+    }
     lineItems(first: $lineFirst, after: $lineAfter) {
       nodes {
         id quantity refundableQuantity

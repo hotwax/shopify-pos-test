@@ -10,7 +10,13 @@ import type { ScenarioContext } from '../support/context.ts';
 
 export interface ReturnOrderDriver {
   readContextEvidence(): Promise<PosContextEvidence>;
-  prepareReturn(parameters: ReturnParameters): Promise<void>;
+  /**
+   * Builds the return cart. The source order read-back is handed in because
+   * the driver needs it to translate approved line GIDs into the product
+   * titles Shopify POS shows, and re-reading it would be a second round trip
+   * against an order the run has already proven.
+   */
+  prepareReturn(parameters: ReturnParameters, source: OmsShopifyOrderDetail): Promise<void>;
   selectCash(): Promise<void>;
   readSummary(): Promise<ObservedReturnSummary>;
   commitCash(): Promise<void>;
@@ -33,6 +39,7 @@ function createIntent(parameters: ReturnParameters, request: RunRequest, udid: s
     returnLines: parameters.lines,
     purchaseLines: [],
     tender: 'cash',
+    refundMethod: parameters.refundMethod,
     expectedDirection: 'refund',
     maximumAbsoluteAmount: { amount: '0', currency },
   };
@@ -64,7 +71,7 @@ export async function returnCashOrder(
   const intent = createIntent(parameters, request, udid, source.total?.currency ?? 'USD');
   const intentHash = hashIntent(intent);
   await context.step('verify-pos-context', async () => context.assertAllowedIntent(intent, await driver.readContextEvidence()));
-  await context.step('prepare-return-cart', () => driver.prepareReturn(parameters));
+  await context.step('prepare-return-cart', () => driver.prepareReturn(parameters, source));
   await context.step('select-cash-refund', () => driver.selectCash());
   const observed = await context.step('verify-return-summary', () => driver.readSummary());
   assertReturnPrecommit(observed, parameters);

@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.rehearse-exchange",
+  "name": "Rehearse a greater exchange (no tender)",
+  "description": "Opens HCDEV#5859, returns the $51.00 Hyperion Elements Jacket, adds a $120.00 White Shirt as the replacement through the same product search a sale uses, and checks the cart reads a $69.00 collect. Nothing is tendered and no exchange is completed. Use it to prove a greater-exchange plan will run before spending one.",
+  "domain": "shopify-pos",
+  "scenario": "pos.rehearse-exchange",
+  "scenarioVersion": 2,
+  "parameters": {
+    "orderGid": "gid://shopify/Order/7677488136356",
+    "orderReference": "HCDEV#5859",
+    "refundMethod": "cash",
+    "collectMethod": "cash",
+    "direction": "collect",
+    "maximumDifference": {
+      "amount": "80.00",
+      "currency": "USD"
+    },
+    "lines": [
+      {
+        "lineGid": "gid://shopify/LineItem/19159920869540",
+        "quantity": 1,
+        "restock": true,
+        "reason": "SIZE_TOO_SMALL"
+      }
+    ],
+    "replacements": [
+      {
+        "variantGid": "gid://shopify/ProductVariant/51310233649316",
+        "productGid": "gid://shopify/Product/10347124261028",
+        "search": "White Shirt",
+        "quantity": 1,
+        "variantSelection": "single"
+      }
+    ]
+  },
+  "assertionMode": "pos-shopify-oms",
+  "tags": [
+    "utility",
+    "rehearsal",
+    "exchange",
+    "test-store"
+  ]
+}

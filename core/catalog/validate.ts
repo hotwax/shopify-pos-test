@@ -21,8 +21,39 @@ function descriptorFor(script: ScriptDefinition, registry: ScenarioDescriptor[])
   return descriptor;
 }
 
-function validateScenarioParameters(parameters: unknown, descriptor: ScenarioDescriptor): void {
-  const validateParameters = ajv.compile(descriptor.parameterSchema);
+/**
+ * A catalog entry stores defaults, a run request states an actual job, so the
+ * two are held to different standards against the same schema.
+ *
+ * A stored "Return a cash order" entry cannot name the order it will return;
+ * that is chosen per run. Requiring it of the template would force a
+ * placeholder order GID into the catalog, which reads like a real target and
+ * is worse than the gap it closes.
+ *
+ * So an entry that declares NO parameters is read as "the operator supplies
+ * these per run" and is checked for shape alone, while an entry that declares
+ * any parameter is a fixture and is held to the full contract. Either way the
+ * run request itself is always checked in full, so nothing reaches a device
+ * without the parameters its scenario cannot run without.
+ */
+const templateSchemas = new WeakMap<object, object>();
+
+function templateSchemaFor(descriptor: ScenarioDescriptor): object {
+  const schemaObject = descriptor.parameterSchema as object;
+  const cached = templateSchemas.get(schemaObject);
+  if (cached) return cached;
+  const { required: _required, ...rest } = schemaObject as Record<string, unknown>;
+  templateSchemas.set(schemaObject, rest);
+  return rest;
+}
+
+function isEmptyTemplate(parameters: unknown): boolean {
+  return !!parameters && typeof parameters === 'object' && !Array.isArray(parameters) && !Object.keys(parameters as object).length;
+}
+
+function validateScenarioParameters(parameters: unknown, descriptor: ScenarioDescriptor, mode: 'template' | 'run'): void {
+  const lenient = mode === 'template' && isEmptyTemplate(parameters);
+  const validateParameters = ajv.compile(lenient ? templateSchemaFor(descriptor) : descriptor.parameterSchema);
   if (!validateParameters(parameters)) {
     throw new Error(`Invalid parameters for ${descriptor.id}: ${formatErrors(validateParameters)}`);
   }
@@ -35,7 +66,7 @@ export function validateScript(input: unknown, registry: ScenarioDescriptor[]): 
   if (!descriptor.supportedAssertionModes.includes(script.assertionMode)) {
     throw new Error(`Assertion mode is not supported by ${script.scenario}`);
   }
-  validateScenarioParameters(script.parameters, descriptor);
+  validateScenarioParameters(script.parameters, descriptor, 'template');
   return structuredClone({ ...script, effect: descriptor.effect });
 }
 
@@ -51,5 +82,5 @@ export function validateRunRequestAgainstCatalog(request: RunRequest, scripts: S
   if (!descriptor.supportedAssertionModes.includes(request.assertionMode)) {
     throw new Error(`Assertion mode is not supported by ${script.id}.`);
   }
-  validateScenarioParameters(request.parameters, descriptor);
+  validateScenarioParameters(request.parameters, descriptor, 'run');
 }

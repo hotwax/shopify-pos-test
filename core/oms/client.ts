@@ -4,7 +4,7 @@ import type {
 import { buildOmsOrigin, normalizeOmsInstanceName } from '../../shared/oms-origin.ts';
 import { OmsSessionStore, type FetchLike } from './auth.ts';
 import { assertNamedReadQuery, listLocationsQuery, listPosOrdersQuery, resolveOrderQuery, searchCustomersQuery, searchOrdersQuery, searchVariantsAtLocationQuery, searchVariantsQuery, type NamedReadOperation } from './queries/documents.ts';
-import { OmsError, boundedCursor, boundedSearch, canonicalOrigin, type OmsConnectionConfig, type OmsConnectionDraft, type OmsConnectionSummary, type OmsLocation, type OmsOrder, type OmsOrderDetail, type OmsOrderItem, type OmsOrderRecord, type OmsService, type OmsCustomer, type OmsPosOrder, type OmsShop, type OmsShopifyOrderAgreement, type OmsShopifyOrderAgreementSale, type OmsShopifyOrderDetail, type OmsShopifyOrderLine, type OmsShopifyOrderTransaction, type OmsVariant } from './types.ts';
+import { OmsError, boundedCursor, boundedSearch, canonicalOrigin, type OmsConnectionConfig, type OmsConnectionDraft, type OmsConnectionSummary, type OmsLocation, type OmsOrder, type OmsOrderDetail, type OmsOrderItem, type OmsOrderRecord, type OmsService, type OmsCustomer, type OmsPosOrder, type OmsShop, type OmsShopifyOrderAgreement, type OmsShopifyOrderAgreementSale, type OmsShopifyOrderDetail, type OmsShopifyOrderLine, type OmsShopifyFulfillment, type OmsShopifyRefund, type OmsShopifyReturn, type OmsShopifyOrderTransaction, type OmsVariant } from './types.ts';
 
 function object(value: unknown): Record<string, any> {
   if (!value || typeof value !== 'object') throw new OmsError('invalid-data', 'The OMS returned an invalid JSON object.');
@@ -240,6 +240,61 @@ function mapOrderAgreement(raw: Record<string, any>): OmsShopifyOrderAgreement {
   };
 }
 
+function returnLineGid(value: unknown): string | null {
+  const gid = optionalString(value);
+  if (gid && !/^gid:\/\/shopify\/LineItem\/[A-Za-z0-9_-]+$/.test(gid)) throw new OmsError('invalid-data', 'The OMS returned an invalid return line item ID.');
+  return gid;
+}
+
+function mapShopifyReturn(raw: Record<string, any>): OmsShopifyReturn {
+  const gid = requiredString(raw.id, 'a Shopify return ID');
+  if (!/^gid:\/\/shopify\/Return\/[A-Za-z0-9_-]+$/.test(gid)) throw new OmsError('invalid-data', 'The OMS returned an invalid Shopify return ID.');
+  return {
+    gid,
+    name: optionalString(raw.name),
+    status: optionalString(raw.status),
+    totalQuantity: optionalInteger(raw.totalQuantity),
+    lines: array(raw.returnLineItems?.nodes).slice(0, 100).map(line => ({
+      gid: requiredString(line.id, 'a Shopify return line ID'),
+      quantity: optionalInteger(line.quantity) ?? 0,
+      reason: optionalString(line.returnReason),
+      reasonNote: optionalString(line.returnReasonNote),
+      customerNote: optionalString(line.customerNote),
+      // Absent on an UnverifiedReturnLineItem, which has no fulfillment link.
+      lineGid: returnLineGid(line.fulfillmentLineItem?.lineItem?.id),
+    })),
+  };
+}
+
+function mapShopifyRefund(raw: Record<string, any>): OmsShopifyRefund {
+  const gid = requiredString(raw.id, 'a Shopify refund ID');
+  if (!/^gid:\/\/shopify\/Refund\/[A-Za-z0-9_-]+$/.test(gid)) throw new OmsError('invalid-data', 'The OMS returned an invalid Shopify refund ID.');
+  return {
+    gid,
+    createdAt: optionalString(raw.createdAt),
+    total: mapMoneySet(raw.totalRefundedSet),
+    lines: array(raw.refundLineItems?.nodes).slice(0, 100).map(line => ({
+      quantity: optionalInteger(line.quantity) ?? 0,
+      restockType: optionalString(line.restockType),
+      lineGid: returnLineGid(line.lineItem?.id),
+    })),
+    transactions: array(raw.transactions?.nodes).slice(0, 50).map(mapOrderTransaction),
+  };
+}
+
+function mapShopifyFulfillment(raw: Record<string, any>): OmsShopifyFulfillment {
+  const gid = requiredString(raw.id, 'a Shopify fulfillment ID');
+  if (!/^gid:\/\/shopify\/Fulfillment\/[A-Za-z0-9_-]+$/.test(gid)) throw new OmsError('invalid-data', 'The OMS returned an invalid Shopify fulfillment ID.');
+  return {
+    gid,
+    status: optionalString(raw.status),
+    lines: array(raw.fulfillmentLineItems?.nodes).flatMap(line => {
+      const lineGid = returnLineGid(line.lineItem?.id);
+      return lineGid ? [{ lineGid, quantity: optionalInteger(line.quantity) ?? 0 }] : [];
+    }),
+  };
+}
+
 function mapShopifyOrder(raw: Record<string, any>): OmsShopifyOrderDetail {
   const gid = requiredString(raw.id, 'a Shopify order GID');
   if (!/^gid:\/\/shopify\/Order\/[A-Za-z0-9_-]+$/.test(gid)) throw new OmsError('invalid-data', 'The OMS returned an invalid Shopify order ID.');
@@ -263,6 +318,14 @@ function mapShopifyOrder(raw: Record<string, any>): OmsShopifyOrderDetail {
   const pageInfo = raw.lineItems?.pageInfo && typeof raw.lineItems.pageInfo === 'object' ? raw.lineItems.pageInfo as Record<string, any> : {};
   const transactions = array(raw.transactions).slice(0, 100).map(mapOrderTransaction);
   const agreements = array(raw.agreements?.nodes).filter(item => item.__typename === 'ReturnAgreement').slice(0, 25).map(mapOrderAgreement);
+  // A truncated return list would silently under-report what the store holds,
+  // which is exactly what the read-back exists to rule out.
+  if (object(raw.returns ?? {}).pageInfo?.hasNextPage === true) throw new OmsError('invalid-data', 'The order has more returns than the reviewed read-back document fetches.');
+  const returns = array(raw.returns?.nodes).slice(0, 20).map(mapShopifyReturn);
+  const refundNodes = array(raw.refunds);
+  if (refundNodes.length >= 20) throw new OmsError('invalid-data', 'The order has more refunds than the reviewed read-back document fetches.');
+  const refunds = refundNodes.map(mapShopifyRefund);
+  const fulfillments = array(raw.fulfillments).slice(0, 25).map(mapShopifyFulfillment);
   return {
     gid,
     legacyResourceId: optionalString(raw.legacyResourceId),
@@ -274,6 +337,10 @@ function mapShopifyOrder(raw: Record<string, any>): OmsShopifyOrderDetail {
     customer: orderCustomer(raw.customer),
     transactions,
     agreements,
+    returnStatus: optionalString(raw.returnStatus),
+    returns,
+    refunds,
+    fulfillments,
     lines,
     nextCursor: pageInfo.hasNextPage && typeof pageInfo.endCursor === 'string' ? pageInfo.endCursor : null,
   };

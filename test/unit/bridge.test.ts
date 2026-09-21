@@ -30,7 +30,7 @@ test('round-trips an owned observed-order bridge request and response', async ()
 test('round-trips a bounded Shopify order readback through the owned bridge', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ios-testing-bridge-order-'));
   const request = await createShopifyOrderRequest(root, 'run-order-bridge', { orderGid: 'gid://shopify/Order/42' });
-  const detail = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], customer: null, transactions: [], agreements: [], lines: [], nextCursor: null };
+  const detail = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], returnStatus: null, returns: [], refunds: [], fulfillments: [], customer: null, transactions: [], agreements: [], lines: [], nextCursor: null };
   await writeBridgeResponse(root, request, { ok: true, order: detail });
   const response = await consumeBridgeResponse(root, request);
   assert.equal(response?.ok, true);

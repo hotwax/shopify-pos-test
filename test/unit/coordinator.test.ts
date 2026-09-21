@@ -222,7 +222,7 @@ test('routes observed-order correlation through the owned coordinator bridge', a
 test('routes Shopify order readback through the owned coordinator bridge', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-order-'));
   let receivedContext = false;
-  const detail = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], customer: null, transactions: [], agreements: [], lines: [], nextCursor: null };
+  const detail = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], returnStatus: null, returns: [], refunds: [], fulfillments: [], customer: null, transactions: [], agreements: [], lines: [], nextCursor: null };
   const coordinator = createCoordinator({
     root,
     readShopifyOrder: async ({ request: workerRequest, orderGid }) => {

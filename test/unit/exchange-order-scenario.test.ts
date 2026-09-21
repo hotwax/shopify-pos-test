@@ -11,11 +11,15 @@ const request: RunRequest = {
 };
 const input = { orderGid: 'gid://shopify/Order/42', orderReference: '#42', lines: [{ lineGid: 'gid://shopify/LineItem/1', quantity: 1, restock: true, reason: 'UNKNOWN' as const }], refundMethod: 'cash' as const, replacements: [{ variantGid: 'gid://shopify/ProductVariant/2', productGid: 'gid://shopify/Product/2', search: 'Replacement', quantity: 1 }], direction: 'collect' as const, maximumDifference: { amount: '20.00', currency: 'USD' }, collectMethod: 'cash' as const };
 const before: OmsShopifyOrderDetail = {
-  gid: input.orderGid, legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '20.00', currency: 'USD' }, paymentGatewayNames: ['cash'], customer: null, transactions: [], agreements: [],
+  gid: input.orderGid, legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '20.00', currency: 'USD' }, paymentGatewayNames: ['cash'], returnStatus: null, returns: [], refunds: [], fulfillments: [], customer: null, transactions: [], agreements: [],
   lines: [{ gid: 'gid://shopify/LineItem/1', quantity: 2, refundableQuantity: 2, unitPrice: { amount: '10.00', currency: 'USD' }, variantGid: 'gid://shopify/ProductVariant/1', variantTitle: 'Blue', sku: 'BLUE', productGid: 'gid://shopify/Product/1', productTitle: 'Shirt', hasOnlyDefaultVariant: null, productVariantCount: null }], nextCursor: null,
 };
 const after: OmsShopifyOrderDetail = {
   ...before,
+  // A collect exchange creates a Return (carrying the reason) but moves no
+  // money back, so there is no refund to carry a tender or a restockType.
+  returnStatus: 'RETURNED',
+  returns: [{ gid: 'gid://shopify/Return/1', name: '#R1', status: 'CLOSED', totalQuantity: 1, lines: [{ gid: 'gid://shopify/ReturnLineItem/1', quantity: 1, reason: 'UNKNOWN', reasonNote: null, customerNote: null, lineGid: 'gid://shopify/LineItem/1' }] }],
   lines: [{ ...before.lines[0]!, refundableQuantity: 1 }, { gid: 'gid://shopify/LineItem/2', quantity: 1, refundableQuantity: 1, unitPrice: { amount: '12.00', currency: 'USD' }, variantGid: 'gid://shopify/ProductVariant/2', variantTitle: 'Red', sku: 'RED', productGid: 'gid://shopify/Product/2', productTitle: 'Shirt', hasOnlyDefaultVariant: null, productVariantCount: null }],
   agreements: [{ id: 'gid://shopify/SalesAgreement/1', happenedAt: '2026-09-20T12:01:00Z', returnGid: 'gid://shopify/Return/1', returnName: '#R1', sales: [{ actionType: 'RETURN', lineType: 'PRODUCT', quantity: -1, amount: { amount: '-10.00', currency: 'USD' }, lineGid: before.lines[0]!.gid, variantGid: before.lines[0]!.variantGid }, { actionType: 'ORDER', lineType: 'PRODUCT', quantity: 1, amount: { amount: '12.00', currency: 'USD' }, lineGid: 'gid://shopify/LineItem/2', variantGid: 'gid://shopify/ProductVariant/2' }] }],
 };

@@ -232,6 +232,73 @@ function boundedOrder(value: unknown): OmsShopifyOrderDetail | null {
       return { id, happenedAt, returnGid, returnName, sales };
     }).filter((agreement): agreement is NonNullable<typeof agreement> => agreement !== null) : [];
   if (!Array.isArray(item.agreements) || agreements.length !== item.agreements.length) return null;
+
+  // Return, refund and fulfillment evidence crosses to the worker so the
+  // native spec can prove restock type, return reason and refund tender
+  // without its own Shopify credentials. Each collection is rebuilt field by
+  // field and the whole order is rejected if any member fails to validate,
+  // rather than silently arriving short.
+  const lineGidOrNull = (value: unknown) => value === null || value === undefined ? null : boundedGid(value, /^gid:\/\/shopify\/LineItem\/[A-Za-z0-9_-]+$/);
+  const boundedCollection = <T>(source: unknown, cap: number, map: (raw: Record<string, any>) => T | null): T[] | null => {
+    if (source === undefined) return [];
+    if (!Array.isArray(source) || source.length > cap) return null;
+    const mapped = source.map(raw => (!raw || typeof raw !== 'object' || Array.isArray(raw)) ? null : map(raw as Record<string, any>));
+    return mapped.some(entry => entry === null) ? null : mapped as T[];
+  };
+
+  const returns = boundedCollection(item.returns, 20, raw => {
+    const id = boundedGid(raw.gid, /^gid:\/\/shopify\/Return\/[A-Za-z0-9_-]+$/);
+    if (!id) return null;
+    const lines = boundedCollection(raw.lines, 100, line => {
+      const lineId = boundedText(line.gid, 120);
+      if (!lineId || !Number.isSafeInteger(line.quantity) || line.quantity < 0 || line.quantity > 100_000) return null;
+      if (line.lineGid !== null && line.lineGid !== undefined && !lineGidOrNull(line.lineGid)) return null;
+      return {
+        gid: lineId,
+        quantity: line.quantity as number,
+        reason: line.reason === null || line.reason === undefined ? null : boundedText(line.reason, 80),
+        reasonNote: line.reasonNote === null || line.reasonNote === undefined ? null : boundedText(line.reasonNote, 500),
+        customerNote: line.customerNote === null || line.customerNote === undefined ? null : boundedText(line.customerNote, 500),
+        lineGid: lineGidOrNull(line.lineGid),
+      };
+    });
+    if (!lines) return null;
+    return { gid: id, name: raw.name === null || raw.name === undefined ? null : boundedText(raw.name, 120), status: raw.status === null || raw.status === undefined ? null : boundedText(raw.status, 80), totalQuantity: Number.isSafeInteger(raw.totalQuantity) ? raw.totalQuantity as number : null, lines };
+  });
+
+  const refunds = boundedCollection(item.refunds, 20, raw => {
+    const id = boundedGid(raw.gid, /^gid:\/\/shopify\/Refund\/[A-Za-z0-9_-]+$/);
+    if (!id) return null;
+    const lines = boundedCollection(raw.lines, 100, line => {
+      if (!Number.isSafeInteger(line.quantity) || line.quantity < 0 || line.quantity > 100_000) return null;
+      if (line.lineGid !== null && line.lineGid !== undefined && !lineGidOrNull(line.lineGid)) return null;
+      return { quantity: line.quantity as number, restockType: line.restockType === null || line.restockType === undefined ? null : boundedText(line.restockType, 40), lineGid: lineGidOrNull(line.lineGid) };
+    });
+    const refundTransactions = boundedCollection(raw.transactions, 50, transaction => {
+      const transactionId = boundedGid(transaction.id, /^gid:\/\/shopify\/OrderTransaction\/[A-Za-z0-9_-]+$/);
+      const kind = boundedText(transaction.kind, 80);
+      const status = boundedText(transaction.status, 80);
+      const gateway = transaction.gateway === null || transaction.gateway === undefined ? null : boundedText(transaction.gateway, 120);
+      if (!transactionId || !kind || !status) return null;
+      return { id: transactionId, kind, status, gateway, amount: transaction.amount === null || transaction.amount === undefined ? null : boundedMoney(transaction.amount) };
+    });
+    if (!lines || !refundTransactions) return null;
+    return { gid: id, createdAt: raw.createdAt === null || raw.createdAt === undefined ? null : boundedText(raw.createdAt, 40), total: raw.total === null || raw.total === undefined ? null : boundedMoney(raw.total), lines, transactions: refundTransactions };
+  });
+
+  const fulfillments = boundedCollection(item.fulfillments, 25, raw => {
+    const id = boundedGid(raw.gid, /^gid:\/\/shopify\/Fulfillment\/[A-Za-z0-9_-]+$/);
+    if (!id) return null;
+    const lines = boundedCollection(raw.lines, 100, line => {
+      const lineGid = lineGidOrNull(line.lineGid);
+      if (!lineGid || !Number.isSafeInteger(line.quantity) || line.quantity < 0 || line.quantity > 100_000) return null;
+      return { lineGid, quantity: line.quantity as number };
+    });
+    if (!lines) return null;
+    return { gid: id, status: raw.status === null || raw.status === undefined ? null : boundedText(raw.status, 80), lines };
+  });
+
+  if (!returns || !refunds || !fulfillments) return null;
   return {
     gid,
     legacyResourceId: boundedText(item.legacyResourceId, 120),
@@ -245,6 +312,10 @@ function boundedOrder(value: unknown): OmsShopifyOrderDetail | null {
     paymentGatewayNames,
     transactions,
     agreements,
+    returnStatus: item.returnStatus === null || item.returnStatus === undefined ? null : boundedText(item.returnStatus, 80),
+    returns,
+    refunds,
+    fulfillments,
     lines: validLines,
     nextCursor: null,
   };

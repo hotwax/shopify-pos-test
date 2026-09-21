@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cp, mkdtemp, rm } from 'node:fs/promises';
+import { cp, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -37,7 +37,10 @@ test('built localhost shell serves the SPA and its catalog API', async () => {
       headers: { Host: `127.0.0.1:${server.port}`, 'X-Local-Session': server.sessionToken },
     });
     assert.equal(catalog.status, 200);
-    assert.equal((await catalog.json() as { scripts: unknown[] }).scripts.length, 21);
+    // Counted from scripts/catalog rather than pinned, so adding a scenario
+    // does not fail a test that is really about the API serving the catalog.
+    const catalogFiles = (await readdir(join(repositoryRoot, 'scripts', 'catalog'))).filter(name => name.endsWith('.json'));
+    assert.equal((await catalog.json() as { scripts: unknown[] }).scripts.length, catalogFiles.length);
 
     const profiles = await fetch(`${server.url}/api/setup/profiles`, {
       headers: { Host: `127.0.0.1:${server.port}`, 'X-Local-Session': server.sessionToken },

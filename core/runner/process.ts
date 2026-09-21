@@ -194,7 +194,11 @@ export function makeWdioConfig(input: WdioConfigInput): WebdriverIO.Config {
     // A native POS scenario spends real time waiting on the device. At 120s a
     // slow-but-healthy run was being killed mid-step and reported as "worker
     // exited without a structured result", which hid the actual failure.
-    mochaOpts: { timeout: 420_000 },
+    // A two-line return configures four controls per line on a build that
+    // drops keystrokes and ignores taps, so it legitimately runs past the
+    // seven minutes a cash sale needs. The cap is a runaway guard, not a
+    // performance target; every individual wait inside a spec is far shorter.
+    mochaOpts: { timeout: 900_000 },
     waitforTimeout: 20_000,
     connectionRetryTimeout: 240_000,
     connectionRetryCount: 0,

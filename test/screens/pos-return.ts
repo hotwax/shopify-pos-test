@@ -75,13 +75,22 @@ async function labelsOf(selector: string): Promise<string[]> {
 
 export const posReturn = {
   /**
-   * Whether this order can be returned at all. POS keeps the accessible
-   * wrapper enabled on every order and disables only the inner button, so the
-   * inner one is the only honest signal (unfulfilled orders read false).
+   * Whether this order can be returned at all.
+   *
+   * POS does not answer this with one control. A returnable order carries a
+   * single accessible element named "Return or exchange" and nothing else;
+   * an order POS will not return carries an extra inner element that reads
+   * disabled while its wrapper stays enabled. Asking only the wrapper always
+   * says yes, and asking only for an inner element finds nothing on the
+   * orders that actually work. So every element with that name is collected
+   * and the order is returnable only when none of them is disabled.
    */
   async isReturnable(): Promise<boolean> {
-    await waitForPresent(s.returnActionButton, { timeout: 20_000, timeoutMsg: 'The order detail did not expose a Return or exchange action.' });
-    return await browser.$(s.returnActionButton).isEnabled();
+    await waitForPresent(s.returnActionAny, { timeout: 20_000, timeoutMsg: 'The order detail did not expose a Return or exchange action.' });
+    const candidates = await browser.$$(s.returnActionAny).getElements();
+    if (!candidates.length) return false;
+    for (const candidate of candidates) if (!await candidate.isEnabled()) return false;
+    return true;
   },
 
   /**
@@ -179,8 +188,16 @@ export const posReturn = {
   async readPanels(): Promise<{ label: string; quantity: number; restock: boolean; reason: ReturnReason | null }[]> {
     const switchNames = await labelsOf(s.restockSwitches);
     const switches = await browser.$$(s.restockSwitches).getElements();
-    const quantities = await browser.$$(s.quantityInputs).getElements();
+    const quantities = await browser.$$(s.quantitySteppers).getElements();
     const reasonNames = await labelsOf(s.reasonButtons(returnReasons.map(posLabelForReason)));
+    // Every per-line control is addressed by its panel's ordinal position, so
+    // the collections must be the same length. If they are not, the tree has
+    // changed shape and zipping them would pair one line's quantity with
+    // another line's restock choice, which is exactly the silent mistake this
+    // read-back exists to catch.
+    if (quantities.length !== switchNames.length || reasonNames.length !== switchNames.length) {
+      throw new Error(`Shopify POS is showing ${switchNames.length} return panel(s) but ${quantities.length} quantity stepper(s) and ${reasonNames.length} reason control(s); the panel layout has changed, so per-line settings cannot be read back safely.`);
+    }
     const panels: { label: string; quantity: number; restock: boolean; reason: ReturnReason | null }[] = [];
     for (const [index, name] of switchNames.entries()) {
       const label = name.slice(s.restockSwitchPrefix.length);
@@ -196,28 +213,39 @@ export const posReturn = {
   },
 
   /**
-   * Raises the line quantity by tapping Increment, verifying the field after
-   * each tap. The button disables at the line's returnable maximum, so a
-   * quantity beyond it fails here rather than silently returning fewer units.
+   * Raises the line quantity one unit at a time, verifying the stepper's own
+   * value after each tap.
+   *
+   * POS publishes the stepper as one adjustable element with no increment or
+   * decrement button to address, so "+" is reached by tapping the right edge
+   * of that element's frame. That is a guess about layout, which is why it is
+   * never trusted: a tap that does not raise the value fails the run rather
+   * than being repeated in hope. A line already above the requested quantity
+   * also fails, because this flow has no proven way down.
    */
   async setQuantity(label: string, quantity: number): Promise<void> {
     if (!Number.isSafeInteger(quantity) || quantity < 1) throw new Error(`A return quantity must be a positive integer; got ${quantity}.`);
+    const readQuantity = async (index: number): Promise<number> => {
+      const stepper = (await browser.$$(s.quantitySteppers).getElements())[index];
+      const raw = ((await stepper?.getAttribute('value')) ?? '').trim();
+      const value = Number(raw);
+      if (!Number.isSafeInteger(value) || value < 0) throw new Error(`The return panel for "${label}" shows an unreadable quantity "${raw}".`);
+      return value;
+    };
     for (let guard = 0; guard <= quantity; guard++) {
       const index = await this.panelIndexFor(label);
-      const input = (await browser.$$(s.quantityInputs).getElements())[index];
-      const current = Number(((await input?.getAttribute('value')) ?? '').trim());
+      const current = await readQuantity(index);
       if (current === quantity) return;
-      if (!Number.isSafeInteger(current)) throw new Error(`The return panel for "${label}" shows an unreadable quantity.`);
       if (current > quantity) throw new Error(`The return panel for "${label}" already shows ${current}, above the requested ${quantity}; POS offers no way down to it in this flow.`);
-      const increment = (await browser.$$(s.quantityIncrementButtons).getElements())[index];
-      if (!increment || !await increment.isEnabled()) {
-        throw new Error(`Shopify POS caps "${label}" at ${current} returnable unit(s), so ${quantity} cannot be returned.`);
+      const stepper = (await browser.$$(s.quantitySteppers).getElements())[index];
+      if (!stepper) throw new Error(`No quantity stepper for "${label}".`);
+      const rect = await browser.getElementRect(stepper.elementId);
+      await browser.execute('mobile: tap', { x: Math.round(rect.x + rect.width * 0.85), y: Math.round(rect.y + rect.height / 2) });
+      try {
+        await browser.waitUntil(async () => await readQuantity(await this.panelIndexFor(label)) > current, { timeout: 8_000, interval: 500 });
+      } catch {
+        throw new Error(`The quantity for "${label}" stayed at ${current} after a tap on the stepper's increment side. Shopify POS may cap this line at ${current} returnable unit(s), or the stepper's layout has changed; inspect this POS version.`);
       }
-      await increment.click();
-      await browser.waitUntil(async () => {
-        const seen = (await browser.$$(s.quantityInputs).getElements())[index];
-        return Number(((await seen?.getAttribute('value')) ?? '').trim()) > current;
-      }, { timeout: 10_000, timeoutMsg: `The quantity for "${label}" did not rise above ${current} after Increment.` });
     }
     throw new Error(`The quantity for "${label}" did not reach ${quantity}.`);
   },
@@ -258,17 +286,30 @@ export const posReturn = {
     }, { timeout: 15_000, timeoutMsg: `The return reason for "${label}" did not become "${wanted}".` });
   },
 
-  /** Types the per-line note. POS keeps it on the return line. */
+  /**
+   * Types the per-line note. POS keeps it on the return line.
+   *
+   * The field swallows keystrokes while the panel re-renders: "seam split at
+   * the shoulder" was observed landing as "slit at the shoulder"
+   * (run-1789983922069). So the value is read back and retyped, the same way
+   * the product and order searches are, rather than waited on in the hope it
+   * settles. The panel is re-resolved each attempt because the element is
+   * replaced on re-render.
+   */
   async setNote(label: string, note: string): Promise<void> {
-    const index = await this.panelIndexFor(label);
-    const field = (await browser.$$(s.returnNoteFields).getElements())[index];
-    if (!field) throw new Error(`No note field for "${label}".`);
-    await field.click();
-    await field.setValue(note);
-    await browser.waitUntil(async () => {
-      const seen = (await browser.$$(s.returnNoteFields).getElements())[index];
-      return ((await seen?.getAttribute('value')) ?? '') === note;
-    }, { timeout: 15_000, timeoutMsg: `The note for "${label}" did not read back as typed; POS drops keystrokes while it re-renders.` });
+    let seen = '';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const index = await this.panelIndexFor(label);
+      const field = (await browser.$$(s.returnNoteFields).getElements())[index];
+      if (!field) throw new Error(`No note field for "${label}".`);
+      try { await field.click(); } catch { /* already focused */ }
+      if (((await field.getAttribute('value')) ?? '') !== '') await field.clearValue();
+      await field.setValue(note);
+      const after = (await browser.$$(s.returnNoteFields).getElements())[await this.panelIndexFor(label)];
+      seen = (await after?.getAttribute('value')) ?? '';
+      if (seen === note) return;
+    }
+    throw new Error(`The note for "${label}" read back as "${seen}" instead of "${note}" after three attempts; POS drops keystrokes while it re-renders.`);
   },
 
   async openExchangeSearch(): Promise<void> {

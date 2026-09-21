@@ -25,7 +25,7 @@ function service(overrides: Partial<OmsService> = {}): OmsService {
     searchCustomers: async () => ({ items: [], nextCursor: null }),
     listPosOrders: async () => ({ items: [], nextCursor: null }),
     searchOrders: async () => ({ items: [{ gid: 'gid://shopify/Order/42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: null }], nextCursor: null }),
-    resolveOrder: async () => ({ gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: null, total: null, paymentGatewayNames: [], customer: null, transactions: [], agreements: [], lines: [], nextCursor: null }),
+    resolveOrder: async () => ({ gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: null, total: null, paymentGatewayNames: [], returnStatus: null, returns: [], refunds: [], fulfillments: [], customer: null, transactions: [], agreements: [], lines: [], nextCursor: null }),
     searchOrderRecords: async () => ({ items: [], nextCursor: null }),
     getOrderDetail: async () => ({ orderId: '42', orderName: '#42', externalId: null, statusId: null, orderDate: null, grandTotal: null, currency: null, items: [] }),
     listLocations: async () => ({ items: [], nextCursor: null }),
@@ -45,7 +45,7 @@ test('rejects ambiguous, missing, or mismatched shop/order context', async () =>
 });
 
 test('reads a complete exact Shopify order through the frozen shop context', async () => {
-  const first = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: null, total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], customer: null, transactions: [], agreements: [], lines: [{ gid: 'gid://shopify/LineItem/1', quantity: 1, refundableQuantity: 1, unitPrice: null, variantGid: 'gid://shopify/ProductVariant/1', variantTitle: null, sku: null, productGid: null, productTitle: null, hasOnlyDefaultVariant: null, productVariantCount: null }], nextCursor: 'next-page' };
+  const first = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: null, total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], returnStatus: null, returns: [], refunds: [], fulfillments: [], customer: null, transactions: [], agreements: [], lines: [{ gid: 'gid://shopify/LineItem/1', quantity: 1, refundableQuantity: 1, unitPrice: null, variantGid: 'gid://shopify/ProductVariant/1', variantTitle: null, sku: null, productGid: null, productTitle: null, hasOnlyDefaultVariant: null, productVariantCount: null }], nextCursor: 'next-page' };
   const second = { ...first, lines: [{ ...first.lines[0]!, gid: 'gid://shopify/LineItem/2', variantGid: 'gid://shopify/ProductVariant/2' }], nextCursor: null };
   let calls = 0;
   const result = await resolveShopifyOrder(service({ resolveOrder: async (_connectionId, _shopId, input) => { calls += 1; return input.cursor ? second : first; } }), context, { orderGid: 'gid://shopify/Order/42' });
@@ -55,7 +55,7 @@ test('reads a complete exact Shopify order through the frozen shop context', asy
 });
 
 test('rejects a repeated order-detail cursor instead of returning partial readback', async () => {
-  const page = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: null, total: null, paymentGatewayNames: [], customer: null, transactions: [], agreements: [], lines: [], nextCursor: 'same-page' };
+  const page = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: null, total: null, paymentGatewayNames: [], returnStatus: null, returns: [], refunds: [], fulfillments: [], customer: null, transactions: [], agreements: [], lines: [], nextCursor: 'same-page' };
   await assert.rejects(() => resolveShopifyOrder(service({ resolveOrder: async () => page }), context, { orderGid: 'gid://shopify/Order/42' }), /cursor/i);
 });
 

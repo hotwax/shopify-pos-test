@@ -64,7 +64,7 @@ test('scenario context reads a sanitized Shopify order through the owned bridge'
   const root = await mkdtemp(join(tmpdir(), 'ios-testing-context-order-'));
   const runId = 'run-context-order-bridge';
   const contextRunner = createScenarioContext({ root, runId, bridgeTimeoutMs: 1_000 });
-  const detail = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], customer: null, transactions: [], agreements: [], lines: [], nextCursor: null };
+  const detail = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], returnStatus: null, returns: [], refunds: [], fulfillments: [], customer: null, transactions: [], agreements: [], lines: [], nextCursor: null };
   const responder = (async () => {
     const deadline = Date.now() + 1_000;
     while (Date.now() < deadline) {

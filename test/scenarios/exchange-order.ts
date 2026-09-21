@@ -11,7 +11,8 @@ import { affectedIds, isCashOrder } from './return-order.ts';
 
 export interface ExchangeOrderDriver {
   readContextEvidence(): Promise<PosContextEvidence>;
-  prepareExchange(parameters: ExchangeParameters): Promise<void>;
+  /** Builds the exchange cart; see ReturnOrderDriver.prepareReturn for why the source is handed in. */
+  prepareExchange(parameters: ExchangeParameters, source: OmsShopifyOrderDetail): Promise<void>;
   selectCash(): Promise<void>;
   readSummary(): Promise<ObservedExchangeSummary>;
   commitCash(): Promise<void>;
@@ -28,8 +29,14 @@ function createIntent(parameters: ExchangeParameters, request: RunRequest, udid:
     originalOrderGid: parameters.orderGid,
     ...(parameters.orderReference ? { originalOrderReference: parameters.orderReference } : {}),
     returnLines: parameters.lines,
-    purchaseLines: parameters.replacements,
+    // Only the business identity of each replacement belongs in the hash; the
+    // search term and expected variant path are how the run gets there, not
+    // what it promises to do.
+    purchaseLines: parameters.replacements.map(line => ({ variantGid: line.variantGid, quantity: line.quantity })),
     tender: 'cash',
+    refundMethod: parameters.refundMethod,
+    collectMethod: parameters.collectMethod,
+    ...(parameters.customer ? { customer: parameters.customer } : {}),
     expectedDirection: parameters.direction,
     maximumAbsoluteAmount: parameters.maximumDifference,
   };
@@ -50,7 +57,7 @@ export async function exchangeCashOrder(
   const intent = createIntent(parameters, request, udid);
   const intentHash = hashIntent(intent);
   await context.step('verify-pos-context', async () => context.assertAllowedIntent(intent, await driver.readContextEvidence()));
-  await context.step('prepare-exchange-cart', () => driver.prepareExchange(parameters));
+  await context.step('prepare-exchange-cart', () => driver.prepareExchange(parameters, source));
   await context.step('select-cash-exchange', () => driver.selectCash());
   const observed = await context.step('verify-exchange-summary', () => driver.readSummary());
   assertExchangePrecommit(observed, parameters);

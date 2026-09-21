@@ -134,6 +134,7 @@ npm run test:return-home
 npm run test:inspect-location
 npm run test:inspect-store-context
 npm run test:script -- --id pos.open-first-order
+npm run test:script -- --id pos.rehearse-return
 npm run dev
 ```
 
@@ -273,6 +274,110 @@ launch. Appium listens only on `127.0.0.1`.
 Run the command from this project's directory. Leave the iPad unlocked and do
 not interact with it during a test. Stop any manually started Appium server on
 port 4723 first; WebdriverIO starts and stops its own local server.
+
+### Returns and exchanges
+
+A return or an exchange is planned on the same page as a sale: pick the
+workflow, pick the source order, then configure what comes back.
+
+**Per line, because POS asks per line.** Selecting a line in Shopify POS
+expands a panel with its own quantity stepper, restock switch, reason picker
+and note field. The planner mirrors that exactly: tick a line and it grows its
+own controls. Two lines on one order can therefore go back with different
+restock choices and different reasons, which is the case a single
+whole-return reason could not express.
+
+| What the operator sets | Where | What it becomes |
+| --- | --- | --- |
+| Restock, per item | Toggle inside the line's panel | `restock` on that return line; POS's own switch, read back before commit |
+| Return reason, per item | Select inside the line's panel | One of the ten Shopify `ReturnReason` values; POS's picker is driven by the matching label |
+| Note, per item | Text field inside the line's panel | `note` on that return line |
+| Refund method | Select under the line list | `cash` or `gift-card`, tapped on POS's "Select refund method" screen |
+| Replacements | Product picker, as a sale builds a cart | Exchange lines, added through the same single- and multi-variant routines |
+| Customer | Keep / Remove / Replace segment | `customer` on the exchange intent |
+| Direction | Select, defaulted from the computed balance | `collect`, `even` or `refund`, bounded by the maximum difference |
+
+**Fulfilled versus unfulfilled.** Shopify POS keeps the accessible wrapper
+around "Return or exchange" enabled on every order and disables only the inner
+button, so the inner one is the only honest signal. It reads disabled whenever
+nothing on the order is fulfilled. The planner works this out before the run:
+it sums each line's fulfilled quantity from the order's `SUCCESS`
+fulfillments, marks an unfulfilled line as not returnable on the device, and
+banners an order with nothing fulfilled at all. A run against one still fails
+closed on the iPad, but the operator sees why first.
+
+**Exact, lesser and greater exchanges** are not separate settings. The page
+computes the balance from the operator's own selections, in integer minor
+units so no float ever rounds an even exchange into a collect, and shows
+"Even exchange", "Refund X" or "Collect X". The approved direction defaults to
+that figure and warns when the operator approves something else.
+
+**"A different payment method"** means the refund method. Collecting a
+difference is cash-only by design: POS's other tenders need a card reader, a
+card number, or a gift-card code Shopify will not disclose (it returns only a
+masked code). Refunding to a new gift card is fully automatable because POS
+issues the card itself, so that is the non-cash path the suite covers.
+
+### Rehearse before you refund
+
+`pos.rehearse-return` does everything a return does except the last tap. It
+opens the order, opens the picker, selects and configures every line, reads
+every setting back off the screen, reads the cart's own refund total, opens
+the refund-method chooser and checks the approved method is there and enabled.
+Then it clears the cart. Nothing is tendered and no refund is issued.
+
+It exists because the fragile part of a return is the device work, not the
+commit, and finding out that a product title changed should not cost a real
+refund. A rehearsal that reaches the refund-method chooser has passed the same
+pre-commit comparison the real run makes, so a green rehearsal means the plan
+will survive that gate too.
+
+### Return building blocks
+
+- `test/screens/pos-return.ts` owns the screens and commits nothing. Two
+  observations shape it. The picker is not a `Screen.*`: POS turns the Home
+  cart into a return cart and lays the item list over it, so every "is it
+  open" test goes through the action-bar title. And expanded panels
+  accumulate, so the tree holds one stepper, one reason button and one note
+  field per selected line, all named identically. Only the restock switch
+  carries the item label, so every per-line control is addressed by the
+  ordinal position of that item's restock switch. Two selected lines that
+  share a POS label fail closed rather than configuring the wrong one.
+- Opening the picker needs a raw coordinate tap. Element taps on both the
+  wrapper and the inner button succeed and do nothing, and the same tap 1.5 s
+  after the detail appeared also did nothing, so the tap is repeated against a
+  positive test for the sheet title rather than any heuristic about the tree
+  changing.
+- `test/flows/return-exchange.ts` sequences those screens and stops at the
+  last surface before money moves. It also translates between the two worlds:
+  a plan is written in Shopify line GIDs, POS shows product titles, and the
+  map is built from the order read back through the OMS.
+- The scenario records the commit attempt before the refund method is tapped,
+  because on the observed build that tap may finish the refund outright. A
+  crash past that point leaves the run in needs-reconciliation rather than
+  silently losing a refund.
+- Read-back is a real check, not an echo. The order query returns the order's
+  returns, refunds, fulfillments and return status, and the verifier compares
+  restock (`RETURN` versus `NO_RESTOCK`), the per-line reason, the refund
+  gateway and the customer against what was approved.
+
+### Proving the iPad is where the plan says
+
+Shopify POS never shows a Shopify GID, so a run cannot read one off the
+screen. What it can read is the More-menu header, which names the store and
+the location. Record those names next to the GIDs in
+`config/test-environments.json` as `posStoreName` and `posLocationName`, and
+the observed header then selects an approved target instead of a run asserting
+its own request back at itself. Without that binding a transaction run fails
+closed and says so.
+
+Reading the header means opening the More tab, which is free while the cart is
+empty and destructive once a return cart exists. So a run reads the context
+once at the start and re-stamps it before the irreversible tap, re-checking
+what can be re-checked without navigating: same Appium session and iPad, POS
+still foregrounded, no alert, no offline banner. The re-stamped evidence
+carries a method that says exactly that, so the run record never overstates
+what was proven.
 
 ### Troubleshooting a run
 

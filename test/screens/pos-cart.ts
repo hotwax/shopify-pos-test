@@ -73,16 +73,47 @@ async function tapProductRow(line: CartLineRequest): Promise<void> {
  * picker. One predicate lookup per poll covers both outcomes, so neither is
  * assumed and neither costs a second round trip.
  */
-async function awaitProductTapOutcome(line: CartLineRequest, cartIndex: number): Promise<ProductTapOutcome> {
+/**
+ * How a landed cart line is recognised.
+ *
+ * A sale cart names each line `Screen.Cart.cartLineItem-N`, so the Nth line
+ * has its own unique identifier. A return or exchange cart does not: every
+ * replacement is a `SharedCart.LineItem.<id>` and the id is not knowable in
+ * advance, so the only honest signal that the kth replacement landed is that
+ * k of them now exist. Describing both as "this predicate must match this
+ * many elements" lets one add-to-cart routine serve both carts.
+ */
+export interface CartTarget {
+  /** Predicate body (no `-ios predicate string:` prefix) matching landed lines. */
+  query: string;
+  /** How many must match once this line has landed. */
+  expected: number;
+}
+
+export function saleCartTarget(cartIndex: number): CartTarget {
+  return { query: `name == "${s.cartLineItem(cartIndex).slice(1)}"`, expected: 1 };
+}
+
+/** The kth replacement in an exchange cart; `count` is k, one-based. */
+export function exchangeCartTarget(count: number): CartTarget {
+  return { query: 'name BEGINSWITH "SharedCart.LineItem."', expected: count };
+}
+
+async function awaitProductTapOutcome(line: CartLineRequest, target: CartTarget): Promise<ProductTapOutcome> {
   await reportProgress('Tapped the product row; waiting for the cart line or the variant picker');
-  const outcomeQuery = `-ios predicate string:name == "${s.cartLineItem(cartIndex).slice(1)}" OR (name == "${s.variantListScreen.slice(1)}" AND visible == 1)`;
+  const variantName = s.variantListScreen.slice(1);
+  const outcomeQuery = `-ios predicate string:(${target.query}) OR (name == "${variantName}" AND visible == 1)`;
   let outcome: ProductTapOutcome | undefined;
   await browser.waitUntil(async () => {
     const found = await browser.$$(outcomeQuery).getElements();
     if (!found.length) return false;
     const names: string[] = [];
     for (const element of found) names.push((await element.getAttribute('name')) ?? '');
-    outcome = names.includes(s.cartLineItem(cartIndex).slice(1)) ? 'cart-line' : 'variant-picker';
+    // The picker wins the race when it is present at all: a cart that already
+    // holds earlier lines would otherwise read as "landed" before this one has.
+    if (names.includes(variantName)) { outcome = 'variant-picker'; return true; }
+    if (names.length < target.expected) return false;
+    outcome = 'cart-line';
     return true;
   }, {
     timeout: 20_000,
@@ -91,8 +122,10 @@ async function awaitProductTapOutcome(line: CartLineRequest, cartIndex: number):
   return outcome!;
 }
 
-async function awaitCartLine(cartIndex: number, timeoutMsg: string): Promise<void> {
-  await waitForPresent(s.cartLineItem(cartIndex), { timeout: 20_000, timeoutMsg });
+async function awaitCartLine(target: CartTarget, timeoutMsg: string): Promise<void> {
+  await browser.waitUntil(async () => (await browser.$$(`-ios predicate string:${target.query}`).getElements()).length >= target.expected, {
+    timeout: 20_000, timeoutMsg,
+  });
 }
 
 /** Chooses the exact variant from the open Screen.VariantList; returns its label. */
@@ -129,9 +162,9 @@ async function chooseVariant(line: CartLineRequest): Promise<string> {
   return variantLabel;
 }
 
-async function chooseVariantIntoCart(line: CartLineRequest, cartIndex: number): Promise<void> {
+async function chooseVariantIntoCart(line: CartLineRequest, target: CartTarget): Promise<void> {
   const variantLabel = await chooseVariant(line);
-  await awaitCartLine(cartIndex, `Shopify POS did not add a cart line after choosing variant ${line.variantGid}${variantLabel ? ` ("${variantLabel}")` : ''}. A variant POS reports as sold out will not add unless this location allows selling out of stock.`);
+  await awaitCartLine(target, `Shopify POS did not add a cart line after choosing variant ${line.variantGid}${variantLabel ? ` ("${variantLabel}")` : ''}. A variant POS reports as sold out will not add unless this location allows selling out of stock.`);
 }
 
 function assertPlannedOutcome(line: CartLineRequest, outcome: ProductTapOutcome): void {
@@ -145,10 +178,11 @@ export const posCart = {
    * Fails closed if POS opens the variant picker instead, because then the
    * plan no longer describes the product.
    */
-  async addSingleVariantItemToCart(line: CartLineRequest, cartIndex: number): Promise<void> {
+  async addSingleVariantItemToCart(line: CartLineRequest, where: number | CartTarget): Promise<void> {
+    const target = typeof where === 'number' ? saleCartTarget(where) : where;
     await openProductSearch();
     await tapProductRow(line);
-    assertPlannedOutcome({ ...line, variantSelection: 'single' }, await awaitProductTapOutcome(line, cartIndex));
+    assertPlannedOutcome({ ...line, variantSelection: 'single' }, await awaitProductTapOutcome(line, target));
   },
 
   /**
@@ -156,11 +190,12 @@ export const posCart = {
    * the picker, the variant tap adds. Fails closed if POS adds a line on the
    * product tap, since which variant it added is then unverified.
    */
-  async addMultiVariantItemToCart(line: CartLineRequest, cartIndex: number): Promise<void> {
+  async addMultiVariantItemToCart(line: CartLineRequest, where: number | CartTarget): Promise<void> {
+    const target = typeof where === 'number' ? saleCartTarget(where) : where;
     await openProductSearch();
     await tapProductRow(line);
-    assertPlannedOutcome({ ...line, variantSelection: 'multi' }, await awaitProductTapOutcome(line, cartIndex));
-    await chooseVariantIntoCart(line, cartIndex);
+    assertPlannedOutcome({ ...line, variantSelection: 'multi' }, await awaitProductTapOutcome(line, target));
+    await chooseVariantIntoCart(line, target);
   },
 
   /**
@@ -168,17 +203,18 @@ export const posCart = {
    * not tell, the run watches which surface POS opens, finishes the add the
    * matching way and returns what it saw so the record can say so.
    */
-  async addItemToCart(line: CartLineRequest, cartIndex: number): Promise<VariantSelection> {
+  async addItemToCart(line: CartLineRequest, where: number | CartTarget): Promise<VariantSelection> {
+    const target = typeof where === 'number' ? saleCartTarget(where) : where;
     const planned = line.variantSelection ?? 'unknown';
-    if (planned === 'single') { await this.addSingleVariantItemToCart(line, cartIndex); return 'single'; }
-    if (planned === 'multi') { await this.addMultiVariantItemToCart(line, cartIndex); return 'multi'; }
+    if (planned === 'single') { await this.addSingleVariantItemToCart(line, target); return 'single'; }
+    if (planned === 'multi') { await this.addMultiVariantItemToCart(line, target); return 'multi'; }
 
     await openProductSearch();
     await tapProductRow(line);
-    const outcome = await awaitProductTapOutcome(line, cartIndex);
+    const outcome = await awaitProductTapOutcome(line, target);
     const observed = observedVariantSelection(outcome);
     await reportProgress(`The plan did not record this product's variant layout; POS behaved as ${observed}-variant`, { productGid: line.productGid, observed });
-    if (outcome === 'variant-picker') await chooseVariantIntoCart(line, cartIndex);
+    if (outcome === 'variant-picker') await chooseVariantIntoCart(line, target);
     return observed;
   },
 

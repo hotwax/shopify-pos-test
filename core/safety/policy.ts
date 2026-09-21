@@ -60,3 +60,56 @@ export async function loadApprovedTargets(root: string): Promise<TargetContext[]
 }
 
 export type { EnvironmentPolicyFile };
+
+/**
+ * How an approved target is recognised on the iPad itself.
+ *
+ * `TargetContext` carries Shopify GIDs, but Shopify POS never shows a GID: its
+ * More-menu header shows a store name and a location name. Without a recorded
+ * binding between the two, a run would have to copy the GIDs out of its own
+ * request to build "evidence", which proves nothing. Declaring the POS-visible
+ * names in the same policy file turns the device reading into a real check:
+ * the observed header must name an approved target before its GIDs are used.
+ */
+export interface TargetDeviceBinding {
+  shopGid: string;
+  locationGid: string;
+  posStoreName: string;
+  posLocationName: string;
+}
+
+export async function loadTargetDeviceBindings(root: string): Promise<TargetDeviceBinding[]> {
+  let raw: string;
+  try { raw = await readFile(join(resolve(root), 'config', 'test-environments.json'), 'utf8'); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw new Error('The test-store target policy could not be read.');
+  }
+  let value: unknown;
+  try { value = JSON.parse(raw); } catch { throw new Error('The test-store target policy is not valid JSON.'); }
+  const targets = (value as { targets?: unknown[] } | null)?.targets;
+  if (!Array.isArray(targets)) throw new Error('The test-store target policy must declare an array of targets.');
+  const bindings: TargetDeviceBinding[] = [];
+  for (const item of targets) {
+    const entry = item as Record<string, unknown>;
+    // Optional: only a target the operator intends to drive from the iPad
+    // needs a device binding. A target without one simply cannot be matched.
+    if (entry.posStoreName === undefined && entry.posLocationName === undefined) continue;
+    const posStoreName = required(entry.posStoreName, 'POS store name', 120).trim();
+    const posLocationName = required(entry.posLocationName, 'POS location name', 120).trim();
+    if (!posStoreName || !posLocationName) throw new Error('The test-store target policy contains an empty POS store or location name.');
+    bindings.push({
+      shopGid: required(entry.shopGid, 'Shopify shop GID'),
+      locationGid: required(entry.locationGid, 'Shopify location GID'),
+      posStoreName,
+      posLocationName,
+    });
+  }
+  const seen = new Set<string>();
+  for (const binding of bindings) {
+    const identity = [binding.posStoreName, binding.posLocationName].join(' @@ ');
+    if (seen.has(identity)) throw new Error('The test-store target policy binds one POS store and location to more than one target.');
+    seen.add(identity);
+  }
+  return bindings;
+}

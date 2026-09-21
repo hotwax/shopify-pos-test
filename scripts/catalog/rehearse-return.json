@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.rehearse-return",
+  "name": "Rehearse a return (no refund)",
+  "description": "Opens HCDEV#5860 on the iPad, selects both lines, sets a different restock choice, return reason and note on each, reads every setting back off the screen, reads the cart's refund total and opens the refund-method chooser, then clears the cart. Nothing is tendered and no refund is issued. Use it to prove a return plan will run before spending a real refund on finding out it will not.",
+  "domain": "shopify-pos",
+  "scenario": "pos.rehearse-return",
+  "scenarioVersion": 2,
+  "parameters": {
+    "orderGid": "gid://shopify/Order/7677490823332",
+    "orderReference": "HCDEV#5860",
+    "refundMethod": "cash",
+    "lines": [
+      {
+        "lineGid": "gid://shopify/LineItem/19159924932772",
+        "quantity": 1,
+        "restock": true,
+        "reason": "DEFECTIVE",
+        "note": "seam split at the shoulder"
+      },
+      {
+        "lineGid": "gid://shopify/LineItem/19159924965540",
+        "quantity": 1,
+        "restock": false,
+        "reason": "SIZE_TOO_SMALL"
+      }
+    ]
+  },
+  "assertionMode": "pos-shopify-oms",
+  "tags": [
+    "utility",
+    "rehearsal",
+    "return",
+    "test-store"
+  ]
+}

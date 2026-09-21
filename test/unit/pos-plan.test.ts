@@ -14,6 +14,8 @@ const common = {
   returnQuantity: '1',
   restock: true,
   replacementVariantGid: 'gid://shopify/ProductVariant/2',
+  replacementProductGid: 'gid://shopify/Product/20256354705572',
+  replacementSearch: 'Replacement product',
   replacementQuantity: '1',
   direction: 'collect' as const,
   note: 'nightly POS fixture',
@@ -26,11 +28,14 @@ test('builds exact create, return, and exchange parameters from the POS form', (
     lines: [{ variantGid: common.variantGid, productGid: common.productGid, search: common.search, quantity: 1, variantSelection: 'unknown' }], currency: 'USD', note: common.note,
   });
   assert.deepEqual(buildMutationParameters({ ...common, scenario: 'pos.return-cash-order' }), {
-    orderGid: common.orderGid, orderReference: common.orderReference, lines: [{ lineGid: common.lineGid, quantity: 1, restock: true }],
+    orderGid: common.orderGid, orderReference: common.orderReference, refundMethod: 'cash',
+    lines: [{ lineGid: common.lineGid, quantity: 1, restock: true, reason: 'UNWANTED' }],
   });
   assert.deepEqual(buildMutationParameters({ ...common, scenario: 'pos.exchange-cash-order' }), {
-    orderGid: common.orderGid, orderReference: common.orderReference, lines: [{ lineGid: common.lineGid, quantity: 1, restock: true }],
-    replacements: [{ variantGid: common.replacementVariantGid, quantity: 1 }], direction: 'collect', maximumDifference: { amount: '20.00', currency: 'USD' },
+    orderGid: common.orderGid, orderReference: common.orderReference, refundMethod: 'cash', collectMethod: 'cash',
+    lines: [{ lineGid: common.lineGid, quantity: 1, restock: true, reason: 'UNWANTED' }],
+    replacements: [{ variantGid: common.replacementVariantGid, productGid: common.replacementProductGid, search: common.replacementSearch, quantity: 1, variantSelection: 'unknown' }],
+    direction: 'collect', maximumDifference: { amount: '20.00', currency: 'USD' },
   });
 });
 
@@ -74,4 +79,41 @@ test('freezes the planned POS add-to-cart path of each cart line into the run pa
   const built = buildMutationParameters({ ...common, scenario: 'pos.create-cash-order', lines }) as { lines: { variantSelection?: string }[] };
   assert.deepEqual(built.lines.map(line => line.variantSelection), ['single', 'multi']);
   assert.throws(() => buildMutationParameters({ ...common, scenario: 'pos.create-cash-order', lines: [{ ...lines[0]!, variantSelection: 'nested' }] }), /single, multi or unknown/);
+});
+
+test('freezes the per-line return options POS asks for, and the refund method', () => {
+  const built = buildMutationParameters({
+    ...common, scenario: 'pos.return-cash-order', refundMethod: 'gift-card',
+    remaining: { 'gid://shopify/LineItem/1': 2, 'gid://shopify/LineItem/2': 1 },
+    returnLines: [
+      { lineGid: 'gid://shopify/LineItem/1', quantity: '2', restock: false, reason: 'DEFECTIVE', note: '  torn seam  ' },
+      { lineGid: 'gid://shopify/LineItem/2', quantity: '1', restock: true, reason: 'SIZE_TOO_LARGE' },
+    ],
+  }) as { lines: { lineGid: string; quantity: number; restock: boolean; reason: string; note?: string }[]; refundMethod: string };
+  assert.equal(built.refundMethod, 'gift-card');
+  assert.deepEqual(built.lines, [
+    { lineGid: 'gid://shopify/LineItem/1', quantity: 2, restock: false, reason: 'DEFECTIVE', note: 'torn seam' },
+    { lineGid: 'gid://shopify/LineItem/2', quantity: 1, restock: true, reason: 'SIZE_TOO_LARGE' },
+  ]);
+});
+
+test('rejects an unknown reason, refund method or customer action rather than guessing', () => {
+  assert.throws(() => buildMutationParameters({ ...common, scenario: 'pos.return-cash-order', returnReason: 'Changed my mind' }), /return reason/i);
+  assert.throws(() => buildMutationParameters({ ...common, scenario: 'pos.return-cash-order', refundMethod: 'store-credit' }), /refund method/i);
+  assert.throws(() => buildMutationParameters({ ...common, scenario: 'pos.exchange-cash-order', customerAction: 'swap' }), /customer action/i);
+  assert.throws(() => buildMutationParameters({ ...common, scenario: 'pos.exchange-cash-order', customerAction: 'replace' }), /replacement customer/i);
+});
+
+test('carries an exchange customer choice into the frozen plan', () => {
+  const built = buildMutationParameters({
+    ...common, scenario: 'pos.exchange-cash-order', customerAction: 'replace', customerGid: 'gid://shopify/Customer/5',
+  }) as { customer?: { action: string; gid?: string } };
+  assert.deepEqual(built.customer, { action: 'replace', gid: 'gid://shopify/Customer/5' });
+  const removed = buildMutationParameters({ ...common, scenario: 'pos.exchange-cash-order', customerAction: 'remove' }) as { customer?: { action: string } };
+  assert.deepEqual(removed.customer, { action: 'remove' });
+});
+
+test('the client money pattern matches the registry money pattern (two decimals)', () => {
+  assert.throws(() => buildMutationParameters({ ...common, scenario: 'pos.exchange-cash-order', maximumDifference: '20.0000' }), /amount|money|maximum/i);
+  assert.doesNotThrow(() => buildMutationParameters({ ...common, scenario: 'pos.exchange-cash-order', maximumDifference: '20.00' }));
 });

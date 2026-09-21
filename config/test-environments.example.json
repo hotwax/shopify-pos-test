@@ -9,7 +9,9 @@
       "connectorShopId": "reviewed-connector-shop-id",
       "shopGid": "gid://shopify/Shop/reviewed-shop-id",
       "shopDomain": "approved-test-store.myshopify.com",
+      "posStoreName": "Approved Test Store",
       "locationGid": "gid://shopify/Location/reviewed-location-id",
+      "posLocationName": "Approved Test Location",
       "apiVersion": "2026-01"
     }
   ]

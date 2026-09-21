@@ -56,6 +56,49 @@ async function readNativeState(element: WebdriverIO.Element): Promise<{ exists: 
   };
 }
 
+/**
+ * Types text into a POS search field and proves the field received it.
+ *
+ * POS filters as you type and each re-render can swallow in-flight
+ * keystrokes: "RED SHOES" was observed landing as "ROES" and "HCDEV#5860" as
+ * "HDEV#5860" three attempts running (run-1789984781667), so retrying the
+ * whole string is not enough on its own. After two whole-string attempts the
+ * text is entered one character at a time, each verified before the next,
+ * which is slow but does not race the re-render.
+ *
+ * Returns nothing and throws if the field never reads back the exact value,
+ * because a dropped character silently changes which rows POS lists.
+ */
+async function typeExactly(selector: string, value: string, what: string): Promise<void> {
+  const field = async (): Promise<WebdriverIO.Element> => browser.$(selector).getElement();
+  const current = async (): Promise<string> => ((await (await field()).getAttribute('value')) ?? '');
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const target = await field();
+    try { await target.click(); } catch { /* already focused */ }
+    if (await current() !== '') await target.clearValue();
+    await target.setValue(value);
+    if (await current() === value) return;
+  }
+
+  // Character by character, re-resolving the element each time because the
+  // list re-render replaces it.
+  const target = await field();
+  try { await target.click(); } catch { /* already focused */ }
+  if (await current() !== '') await (await field()).clearValue();
+  for (const [index, character] of [...value].entries()) {
+    const wanted = value.slice(0, index + 1);
+    let seen = await current();
+    for (let retry = 0; retry < 3 && seen !== wanted; retry++) {
+      await (await field()).addValue(character);
+      seen = await current();
+    }
+    if (seen !== wanted) throw new Error(`Shopify POS did not accept ${what} "${value}"; after typing character ${index + 1} the field read "${seen}".`);
+  }
+  const final = await current();
+  if (final !== value) throw new Error(`Shopify POS did not accept ${what} "${value}"; the field read "${final}".`);
+}
+
 export const pos = {
   async assertHome(): Promise<void> {
     await requireNoAlert();
@@ -74,7 +117,22 @@ export const pos = {
       if (await candidate.isDisplayed()) visible.push(candidate);
     }
     if (visible.length !== 1) throw new Error('The current POS More menu did not expose exactly one visible store-context header.');
-    return parseStoreContextLabel(await visible[0].getAttribute('label'));
+    // The container carries the label on some builds and on others it is bare,
+    // with the "Staff, Store, Location, Plan" string on its one accessible
+    // descendant instead (observed on 11.14.0, run-1789984215018). Both are
+    // read rather than one being assumed, and an unparseable result still
+    // fails closed in parseStoreContextLabel.
+    const direct = await visible[0].getAttribute('label');
+    if (direct?.trim()) return parseStoreContextLabel(direct);
+    const labelled: string[] = [];
+    for (const descendant of await visible[0].$$(s.moreHeaderLabel).getElements()) {
+      const label = (await descendant.getAttribute('label'))?.trim() ?? '';
+      if (label.includes(',')) labelled.push(label);
+    }
+    if (labelled.length !== 1) {
+      throw new Error(`The POS More menu header exposed ${labelled.length} candidate store-context labels instead of one; inspect this POS version.`);
+    }
+    return parseStoreContextLabel(labelled[0]!);
   },
 
   /**
@@ -150,7 +208,27 @@ export const pos = {
     const checkout = browser.$(s.checkoutButton);
     if (!await checkout.isDisplayed()) throw new Error('The POS cart surface is not visible; inspect the current Home layout before testing.');
     if (await checkout.isEnabled()) throw new Error('The POS cart is not in the observed empty-cart state: its checkout control is enabled, so the cart holds lines. Clear the cart (pos.clear-cart) and rerun.');
-    if (await isPresent(s.anyCartLineItem)) throw new Error('The POS cart is not in the observed empty-cart state: it still holds a line. Clear the cart (pos.clear-cart) and rerun.');
+    if (await isPresent(s.anyCartLineItem) || await isPresent(s.anySharedCartLine)) throw new Error('The POS cart is not in the observed empty-cart state: it still holds a line. Clear the cart (pos.clear-cart) and rerun.');
+  },
+
+  /**
+   * Opens the Orders tab without judging what is listed.
+   *
+   * `openOrders` additionally insists on loaded rows, which is right for the
+   * "first order" smoke but wrong for a search by reference: POS keeps the
+   * previous run's filter text, so the list is legitimately empty until the
+   * new term is typed, and demanding rows first fails a run that would have
+   * worked (run-1789984916168).
+   */
+  async openOrdersScreen(): Promise<void> {
+    await requireNoAlert();
+    if (await browser.$(s.ordersScreen).isDisplayed()) return;
+    const tab = await browser.$(s.ordersTab).getElement();
+    await requireTouchable(tab, 'Orders navigation is blocked or unavailable.');
+    await tab.click();
+    await browser.waitUntil(async () => await browser.$(s.ordersScreen).isDisplayed() && await tab.isSelected(), {
+      timeout: 20_000, timeoutMsg: 'Shopify POS did not open the Orders tab.',
+    });
   },
 
   async openOrders(): Promise<void> {
@@ -257,13 +335,17 @@ export const pos = {
 
   async openOrderByReference(reference: string): Promise<string> {
     const expected = normalizeOrderReference(reference);
+    // Getting to Orders is part of opening an order by reference. Leaving it
+    // to the caller made every new flow fail the same way, with POS still on
+    // Home and a selector error about a screen nobody had navigated to
+    // (run-1789983515107).
+    await this.openOrdersScreen();
     const screen = browser.$(s.ordersScreen);
     const search = await screen.$(s.orderSearchField).getElement();
     if (!await search.isDisplayed() || !await search.isEnabled()) {
       throw new Error('The observed POS Orders search field is unavailable; inspect the current build before changing selectors.');
     }
-    await search.clearValue();
-    await search.setValue(expected);
+    await typeExactly(s.orderSearchField, expected, 'the order reference');
 
     // An explicitly requested reference resolves any ambiguity itself, so the
     // customer-less row shape POS uses for walk-in sales is accepted here
@@ -271,6 +353,10 @@ export const pos = {
     const rowReference = (label: string | null): string | null => {
       try { return readOrderRowSummary(label).reference; } catch { return null; }
     };
+    // Every row's label is read on every poll. That is a round trip per row,
+    // but bounding it by row count was tried and rejected: POS keeps more
+    // rows attached than it filters to, so a count guard never matched
+    // (run-1789984724250). Correctness first; the poll interval bounds it.
     const matchingRows = async (): Promise<WebdriverIO.Element[]> => {
       const rows = await browser.$(s.ordersList).$$(s.orderRows).getElements();
       const matches: WebdriverIO.Element[] = [];

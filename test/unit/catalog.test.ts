@@ -36,10 +36,14 @@ test('accepts a registered read-only catalog definition', () => {
   assert.equal(validateScript(returnSurfaceInspection, registry).effect, 'read-only');
   const createOrder = { ...smoke, id: 'pos.create-cash-order', name: 'Create a cash order', scenario: 'pos.create-cash-order', description: 'Gated cash order', assertionMode: 'pos-shopify-oms' as const, tags: ['mutation'] };
   assert.equal(validateScript(createOrder, registry).effect, 'create-order');
-  const returnOrder = { ...smoke, id: 'pos.return-cash-order', name: 'Return a cash order', scenario: 'pos.return-cash-order', description: 'Gated cash return', assertionMode: 'pos-shopify-oms' as const, tags: ['mutation'] };
+  // Bumped with the registry when the return gained per-line reasons, notes
+  // and an explicit refund method; a catalog entry pinned to the old version
+  // must be rejected rather than silently run against the new schema.
+  const returnOrder = { ...smoke, id: 'pos.return-cash-order', name: 'Return a cash order', scenario: 'pos.return-cash-order', scenarioVersion: 2, description: 'Gated cash return', assertionMode: 'pos-shopify-oms' as const, tags: ['mutation'] };
   assert.equal(validateScript(returnOrder, registry).effect, 'return');
-  const exchangeOrder = { ...smoke, id: 'pos.exchange-cash-order', name: 'Exchange a cash order', scenario: 'pos.exchange-cash-order', description: 'Gated cash exchange', assertionMode: 'pos-shopify-oms' as const, tags: ['mutation'] };
+  const exchangeOrder = { ...smoke, id: 'pos.exchange-cash-order', name: 'Exchange a cash order', scenario: 'pos.exchange-cash-order', scenarioVersion: 2, description: 'Gated cash exchange', assertionMode: 'pos-shopify-oms' as const, tags: ['mutation'] };
   assert.equal(validateScript(exchangeOrder, registry).effect, 'exchange');
+  assert.throws(() => validateScript({ ...returnOrder, scenarioVersion: 1 }, registry), /Unsupported scenario version/);
 });
 
 test('accepts only run parameters owned by the selected catalog scenario', () => {
@@ -97,4 +101,34 @@ test('does not load a catalog entry through a symlink outside the workspace', as
   const result = await loadCatalog(root);
   assert.equal(result.scripts.length, 0);
   assert.ok(result.errors.some(error => error.includes('outside')));
+});
+
+test('a run request must carry the parameters its scenario cannot run without, while the catalog entry need not', () => {
+  // The stored entry names no order: that is chosen per run.
+  assert.doesNotThrow(() => validateScript(
+    { ...smoke, id: 'pos.return-cash-order', name: 'Return a cash order', scenario: 'pos.return-cash-order', scenarioVersion: 2, description: 'Gated cash return', assertionMode: 'pos-shopify-oms' as const, tags: ['mutation'] },
+    registry,
+  ));
+  const scripts = [validateScript(
+    { ...smoke, id: 'pos.return-cash-order', name: 'Return a cash order', scenario: 'pos.return-cash-order', scenarioVersion: 2, description: 'Gated cash return', assertionMode: 'pos-shopify-oms' as const, tags: ['mutation'] },
+    registry,
+  )];
+  const request = { scriptId: 'pos.return-cash-order', assertionMode: 'pos-shopify-oms' as const, parameters: {} };
+  assert.throws(() => validateRunRequestAgainstCatalog(request as never, scripts, registry), /must have required property 'orderGid'/);
+  assert.doesNotThrow(() => validateRunRequestAgainstCatalog({
+    ...request,
+    parameters: {
+      orderGid: 'gid://shopify/Order/1',
+      lines: [{ lineGid: 'gid://shopify/LineItem/1', quantity: 1, restock: true, reason: 'DEFECTIVE', note: 'seam split' }],
+      refundMethod: 'gift-card',
+    },
+  } as never, scripts, registry));
+});
+
+test('a catalog entry that declares parameters is held to the full contract', () => {
+  // build-cart-only ships a fixed two-line fixture; dropping half of it must
+  // fail at catalog load, not on the iPad.
+  const fixture = { ...smoke, id: 'pos.build-cart-only', name: 'Build cart only', scenario: 'pos.build-cart-only', description: 'Cart timing rehearsal', assertionMode: 'pos' as const, tags: ['utility'], parameters: { lines: [{ variantGid: 'gid://shopify/ProductVariant/1', productGid: 'gid://shopify/Product/2', search: 'White Shirt', quantity: 1 }], currency: 'USD' } };
+  assert.doesNotThrow(() => validateScript(fixture, registry));
+  assert.throws(() => validateScript({ ...fixture, parameters: { currency: 'USD' } }, registry), /must have required property 'lines'/);
 });

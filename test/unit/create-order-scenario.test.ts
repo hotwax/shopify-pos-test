@@ -12,7 +12,7 @@ const request: RunRequest = {
 };
 const input = { lines: [{ variantGid: 'gid://shopify/ProductVariant/1', productGid: 'gid://shopify/Product/10256354705572', search: 'Test product', quantity: 1 }], currency: 'USD' };
 const readback: OmsShopifyOrderDetail = {
-  gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], customer: null, transactions: [], agreements: [],
+  gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], returnStatus: null, returns: [], refunds: [], fulfillments: [], customer: null, transactions: [], agreements: [],
   lines: [{ gid: 'gid://shopify/LineItem/42', quantity: 1, refundableQuantity: 1, unitPrice: { amount: '12.00', currency: 'USD' }, variantGid: input.lines[0]!.variantGid, variantTitle: 'Blue', sku: 'BLUE', productGid: 'gid://shopify/Product/1', productTitle: 'Shirt', hasOnlyDefaultVariant: null, productVariantCount: null }], nextCursor: null,
 };
 

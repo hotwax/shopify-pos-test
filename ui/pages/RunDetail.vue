@@ -48,7 +48,7 @@
         <ion-card>
           <ion-card-header>
             <ion-card-subtitle>Submitted by you</ion-card-subtitle>
-            <ion-card-title>Test order</ion-card-title>
+            <ion-card-title>{{ transactionTitle }}</ion-card-title>
           </ion-card-header>
           <ion-card-content>
             <ion-list v-if="orderLines.length">
@@ -64,7 +64,48 @@
                 <ion-badge slot="end">x{{ line.quantity }}</ion-badge>
               </ion-item>
             </ion-list>
-            <ion-note v-else><p>This script takes no order lines.</p></ion-note>
+            <ion-note v-else-if="!isReturnOrExchange"><p>This script takes no order lines.</p></ion-note>
+
+            <!-- A return or exchange also submits `lines`, but they are source
+                 order lines with no variant of their own, so they are rendered
+                 here with the per-line settings POS was told to use. -->
+            <template v-if="isReturnOrExchange">
+              <ion-list v-if="returnLines.length">
+                <ion-item v-for="(line, index) in returnLines" :key="line.lineGid ?? index" :lines="index === returnLines.length - 1 ? 'none' : 'full'">
+                  <ion-label class="ion-text-wrap">
+                    Return {{ line.lineGid || 'an unnamed line' }}
+                    <p>{{ line.restock ? 'Restock' : 'No restock' }} · {{ reasonLabel(line.reason) }}</p>
+                    <p v-if="line.note">Note: {{ line.note }}</p>
+                  </ion-label>
+                  <ion-badge slot="end">x{{ line.quantity }}</ion-badge>
+                </ion-item>
+              </ion-list>
+              <ion-note v-else><p>This run recorded no return lines.</p></ion-note>
+
+              <template v-if="isExchangeRun">
+                <ion-list v-if="replacementLines.length">
+                  <ion-item v-for="(line, index) in replacementLines" :key="line.variantGid ?? index" :lines="index === replacementLines.length - 1 ? 'none' : 'full'">
+                    <ion-label class="ion-text-wrap">
+                      Replace with {{ line.search || line.variantGid }}
+                      <p>{{ line.variantGid }}</p>
+                      <p v-if="isVariantSelection(line.variantSelection)">{{ describeVariantSelection(line.variantSelection) }}</p>
+                    </ion-label>
+                    <ion-badge slot="end">x{{ line.quantity }}</ion-badge>
+                  </ion-item>
+                </ion-list>
+                <ion-note v-else><p>This run recorded no replacement items.</p></ion-note>
+              </template>
+
+              <div class="fact-grid">
+                <div><ion-note>Source order</ion-note><p>{{ transaction.orderReference || transaction.orderGid || 'unknown' }}</p></div>
+                <div><ion-note>Refund method</ion-note><p>{{ refundMethodLabel }}</p></div>
+                <template v-if="isExchangeRun">
+                  <div><ion-note>Customer</ion-note><p>{{ exchangeCustomerLabel }}</p></div>
+                  <div><ion-note>Approved direction</ion-note><p>{{ transaction.direction || 'unknown' }}</p></div>
+                  <div><ion-note>Maximum difference</ion-note><p>{{ maximumDifferenceLabel }}</p></div>
+                </template>
+              </div>
+            </template>
 
             <div class="fact-grid">
               <div v-if="currency"><ion-note>Tender</ion-note><p>Cash, {{ currency }}</p></div>
@@ -168,6 +209,7 @@ import { IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, Io
 import { playOutline } from 'ionicons/icons';
 import type { RunRecord } from '../../shared/contracts.ts';
 import { describeVariantSelection, isVariantSelection } from '../../shared/variant-selection.ts';
+import { describeReturnReason, isReturnReason } from '../../shared/return-reason.ts';
 import { getHealth, getRun, getRunArtifactBlob, getRunLogs, getRunProgress, listRunArtifacts, requestStop, startRun, type RunArtifact, type RunProgressEntry } from '../api.ts';
 
 const route = useRoute();
@@ -253,9 +295,53 @@ const isLive = computed(() => Boolean(run.value && liveStates.includes(run.value
 function clockTime(at: string): string { const date = new Date(at); return Number.isFinite(date.getTime()) ? date.toLocaleTimeString() : ''; }
 
 interface SubmittedLine { variantGid?: string; productGid?: string; search?: string; quantity?: number; imageUrl?: string; variantSelection?: string }
+interface SubmittedReturnLine { lineGid?: string; quantity?: number; restock?: boolean; reason?: string; note?: string }
+interface SubmittedTransaction {
+  orderGid?: string;
+  orderReference?: string;
+  lines?: SubmittedReturnLine[];
+  refundMethod?: string;
+  replacements?: SubmittedLine[];
+  customer?: { action?: string; gid?: string };
+  direction?: string;
+  maximumDifference?: { amount?: string; currency?: string };
+}
+
+// A rehearsal submits exactly the return's parameters, so it renders through
+// the same branch; only its outcome differs.
+const isReturnRun = computed(() => run.value?.request.scriptId === 'pos.return-cash-order' || run.value?.request.scriptId === 'pos.rehearse-return');
+const isExchangeRun = computed(() => run.value?.request.scriptId === 'pos.exchange-cash-order');
+const isReturnOrExchange = computed(() => isReturnRun.value || isExchangeRun.value);
+const transactionTitle = computed(() => isExchangeRun.value ? 'Exchange' : isReturnRun.value ? 'Return' : 'Test order');
+const transaction = computed<SubmittedTransaction>(() => (run.value?.request.parameters ?? {}) as SubmittedTransaction);
+
 const orderLines = computed<SubmittedLine[]>(() => {
+  // A return or exchange fills `lines` with source order lines, which carry no
+  // variant, so they get their own block rather than being rendered as cart
+  // lines with every field blank.
+  if (isReturnOrExchange.value) return [];
   const lines = (run.value?.request.parameters as { lines?: unknown })?.lines;
   return Array.isArray(lines) ? lines as SubmittedLine[] : [];
+});
+const returnLines = computed<SubmittedReturnLine[]>(() => Array.isArray(transaction.value.lines) ? transaction.value.lines : []);
+const replacementLines = computed<SubmittedLine[]>(() => Array.isArray(transaction.value.replacements) ? transaction.value.replacements : []);
+
+function reasonLabel(reason: string | undefined): string {
+  return isReturnReason(reason) ? describeReturnReason(reason) : 'No reason recorded';
+}
+const refundMethodLabel = computed(() => {
+  if (transaction.value.refundMethod === 'gift-card') return 'Gift card';
+  return transaction.value.refundMethod === 'cash' ? 'Cash, original payment' : 'Not recorded';
+});
+const exchangeCustomerLabel = computed(() => {
+  const customer = transaction.value.customer;
+  if (!customer) return 'Not specified';
+  if (customer.action === 'replace') return `Replace with ${customer.gid ?? 'an unset GID'}`;
+  return customer.action === 'remove' ? 'Remove from the order' : 'Keep as is';
+});
+const maximumDifferenceLabel = computed(() => {
+  const maximum = transaction.value.maximumDifference;
+  return maximum?.amount ? `${maximum.amount} ${maximum.currency ?? ''}`.trim() : 'unset';
 });
 const currency = computed(() => String((run.value?.request.parameters as { currency?: unknown })?.currency ?? ''));
 const note = computed(() => String((run.value?.request.parameters as { note?: unknown })?.note ?? ''));

@@ -135,6 +135,56 @@ export interface OmsOrderCustomer {
   phone: string;
 }
 
+/** One line of a Shopify return, as recorded by the POS return sheet. */
+export interface OmsShopifyReturnLine {
+  gid: string;
+  quantity: number;
+  /**
+   * Shopify's ReturnReason enum value, not the POS button label. `null` when
+   * POS recorded none. See shared/return-reason.ts for the mapping.
+   */
+  reason: string | null;
+  reasonNote: string | null;
+  customerNote: string | null;
+  /**
+   * The order line this return line came from. `null` on an unverified return
+   * line, which carries no fulfillment link, so quantities are proved from the
+   * refund's own line items instead.
+   */
+  lineGid: string | null;
+}
+
+export interface OmsShopifyReturn {
+  gid: string;
+  name: string | null;
+  status: string | null;
+  totalQuantity: number | null;
+  lines: OmsShopifyReturnLine[];
+}
+
+export interface OmsShopifyRefundLine {
+  quantity: number;
+  /** RETURN | NO_RESTOCK | CANCEL | LEGACY_RESTOCK. This is what proves the restock choice. */
+  restockType: string | null;
+  lineGid: string | null;
+}
+
+export interface OmsShopifyRefund {
+  gid: string;
+  createdAt: string | null;
+  total: { amount: string; currency: string } | null;
+  lines: OmsShopifyRefundLine[];
+  /** The refund's own transactions; their gateway proves the refund method. */
+  transactions: OmsShopifyOrderTransaction[];
+}
+
+/** Only fulfilled lines are returnable in POS, so the planner needs this to offer honest choices. */
+export interface OmsShopifyFulfillment {
+  gid: string;
+  status: string | null;
+  lines: { lineGid: string; quantity: number }[];
+}
+
 export interface OmsShopifyOrderDetail {
   gid: string;
   legacyResourceId: string | null;
@@ -146,6 +196,11 @@ export interface OmsShopifyOrderDetail {
   customer: OmsOrderCustomer | null;
   transactions: OmsShopifyOrderTransaction[];
   agreements: OmsShopifyOrderAgreement[];
+  /** NO_RETURN | RETURN_REQUESTED | IN_PROGRESS | RETURNED | ... */
+  returnStatus: string | null;
+  returns: OmsShopifyReturn[];
+  refunds: OmsShopifyRefund[];
+  fulfillments: OmsShopifyFulfillment[];
   lines: OmsShopifyOrderLine[];
   nextCursor: string | null;
 }

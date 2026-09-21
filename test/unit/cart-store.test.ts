@@ -116,7 +116,7 @@ test('seeding from an order copies its customer into the planned order', () => {
   const cart = store();
   cart.startFromOrder({
     gid: 'gid://shopify/Order/9', legacyResourceId: '9', name: '#9', financialStatus: 'PAID', fulfillmentStatus: null,
-    total: { amount: '10.00', currency: 'USD' }, paymentGatewayNames: ['cash'],
+    total: { amount: '10.00', currency: 'USD' }, paymentGatewayNames: ['cash'], returnStatus: null, returns: [], refunds: [], fulfillments: [],
     customer: { gid: 'gid://shopify/Customer/5', firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.com', phone: '' },
     transactions: [], agreements: [], nextCursor: null,
     lines: [{ gid: 'gid://shopify/LineItem/1', quantity: 1, refundableQuantity: 1, unitPrice: { amount: '10.00', currency: 'USD' }, variantGid: 'gid://shopify/ProductVariant/7', variantTitle: 'M', sku: 'A-M', productGid: 'gid://shopify/Product/7', productTitle: 'Copied', hasOnlyDefaultVariant: true, productVariantCount: 1 }],
@@ -132,7 +132,7 @@ test('an order with no customer leaves the planned customer unset', () => {
   const cart = store();
   cart.startFromOrder({
     gid: 'gid://shopify/Order/10', legacyResourceId: '10', name: '#10', financialStatus: 'PAID', fulfillmentStatus: null,
-    total: { amount: '10.00', currency: 'USD' }, paymentGatewayNames: ['cash'], customer: null,
+    total: { amount: '10.00', currency: 'USD' }, paymentGatewayNames: ['cash'], returnStatus: null, returns: [], refunds: [], fulfillments: [], customer: null,
     transactions: [], agreements: [], nextCursor: null,
     lines: [{ gid: 'gid://shopify/LineItem/1', quantity: 1, refundableQuantity: 1, unitPrice: { amount: '10.00', currency: 'USD' }, variantGid: 'gid://shopify/ProductVariant/7', variantTitle: 'M', sku: 'A-M', productGid: 'gid://shopify/Product/7', productTitle: 'Copied', hasOnlyDefaultVariant: true, productVariantCount: 1 }],
   }, 'USD');
@@ -148,7 +148,7 @@ test('seeding from an order copies only lines with an exact variant GID', () => 
     financialStatus: 'PAID',
     fulfillmentStatus: null,
     total: { amount: '30.00', currency: 'GBP' },
-    paymentGatewayNames: ['cash'], customer: null,
+    paymentGatewayNames: ['cash'], returnStatus: null, returns: [], refunds: [], fulfillments: [], customer: null,
     transactions: [],
     agreements: [],
     nextCursor: null,
@@ -243,7 +243,7 @@ test('a cart seeded from an order plans the path from the read-back variant fact
   const cart = store();
   cart.startFromOrder({
     gid: 'gid://shopify/Order/11', legacyResourceId: '11', name: '#11', financialStatus: 'PAID', fulfillmentStatus: null,
-    total: { amount: '20.00', currency: 'USD' }, paymentGatewayNames: ['cash'], customer: null,
+    total: { amount: '20.00', currency: 'USD' }, paymentGatewayNames: ['cash'], returnStatus: null, returns: [], refunds: [], fulfillments: [], customer: null,
     transactions: [], agreements: [], nextCursor: null,
     lines: [
       { gid: 'gid://shopify/LineItem/1', quantity: 1, refundableQuantity: 1, unitPrice: { amount: '10.00', currency: 'USD' }, variantGid: 'gid://shopify/ProductVariant/7', variantTitle: 'Default Title', sku: null, productGid: 'gid://shopify/Product/7', productTitle: 'Plain', hasOnlyDefaultVariant: true, productVariantCount: 1 },

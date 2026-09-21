@@ -81,6 +81,10 @@ export const ordersTab = '~Component.AppNavigation.BottomTabs.Orders';
 export const moreTab = '~Component.AppNavigation.BottomTabs.More';
 export const moreScreen = '~Screen.More.IndexScreen';
 export const moreHeader = '~Component.AppNavigation.MoreMenu.Header';
+// Observed 2026-09-21 (run-1789984215018): the header container itself has no
+// label. The "Staff, Store, Location, Plan" string lives on its one accessible
+// descendant, the element the Header trait is on.
+export const moreHeaderLabel = '-ios predicate string:type == "XCUIElementTypeOther" AND accessible == 1';
 export const settingsMenu = '-ios predicate string:type == "XCUIElementTypeOther" AND name == "Screen.More.IndexScreen.NavListContent.Item.Component.AppNavigation.MoreMenu.Settings"';
 export const settingsScreen = '~Screen.Settings';
 export const settingsLocationItem = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Screen.Settings.LocationsItem"';
@@ -120,8 +124,20 @@ export const variantListBackButton = '-ios predicate string:type == "XCUIElement
 // reflects whether the order can be returned at all. On an unfulfilled order
 // the wrapper still reads enabled=true and the inner button reads false
 // (HCDEV#5697, run-1789963996362).
+/**
+ * The order detail's Return or exchange action.
+ *
+ * Its shape differs by order, which is the whole signal. On a returnable
+ * order (HCDEV#5860, run-1789983778356) it is a single accessible
+ * XCUIElementTypeOther with no child button at all, while its sibling
+ * "Send receipt" wraps a real button. On an order POS will not return, an
+ * inner element appears and reads disabled. So the honest test is not "is the
+ * wrapper enabled" (it always is) but "is anything named Return or exchange
+ * disabled", which `returnActionAny` collects and posReturn.isReturnable
+ * judges.
+ */
+export const returnActionAny = '-ios predicate string:name == "Return or exchange"';
 export const returnActionWrapper = '-ios predicate string:name == "Return or exchange" AND accessible == 1';
-export const returnActionButton = '-ios predicate string:name == "Return or exchange" AND accessible == 0';
 
 // Opening "Return or exchange" does NOT push a new screen: POS turns the Home
 // cart into a return cart and lays the picker over it, so Screen.Home and
@@ -144,9 +160,13 @@ export const returnItemHeader = (label: string) => `-ios predicate string:type =
 // these find-alls. See posReturn.panelIndexFor.
 export const restockSwitches = '-ios predicate string:type == "XCUIElementTypeSwitch" AND name BEGINSWITH "Restock at this location: "';
 export const restockSwitchPrefix = 'Restock at this location: ';
-export const quantityInputs = '-ios predicate string:name == "Screen.ManageItem.quantityStepper.TextInput"';
-export const quantityIncrementButtons = '-ios predicate string:name == "Screen.ManageItem.quantityStepper.IncrementButton"';
-export const quantityDecrementButtons = '-ios predicate string:name == "Screen.ManageItem.quantityStepper.DecrementButton"';
+/**
+ * The per-line quantity stepper. Observed 2026-09-21 (run-1789984314738) as a
+ * single adjustable XCUIElementTypeOther carrying the quantity as its value:
+ * POS publishes no text input and no increment or decrement button of its
+ * own, so the control is both read and driven through this one element.
+ */
+export const quantitySteppers = '-ios predicate string:name == "Screen.ManageItem.quantityStepper"';
 export const returnNoteFields = '-ios predicate string:type == "XCUIElementTypeTextField" AND name == "Note"';
 // The reason control is named "Return reason" until a reason is chosen, after
 // which its name BECOMES the chosen label. Matching both keeps one element per
@@ -165,6 +185,10 @@ export const refundMethodTitle = '-ios predicate string:type == "XCUIElementType
 export const refundMethodCash = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Cash, Original payment"';
 export const refundMethodGiftCard = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Gift card"';
 export const refundMethodSplit = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Split refund"';
+// The chooser leaves with the action bar's primary button, which is labelled
+// Back here and Close on the order detail; both share the component name, so
+// each surface is matched on its label (observed run-1789985005794).
+export const refundMethodBack = '-ios predicate string:name == "Component.ActionBar.PrimaryActionButton" AND label == "Back"';
 
 /**
  * Escapes a POS label for embedding in an iOS predicate string literal. A label
@@ -176,3 +200,10 @@ export function posLiteral(label: string): string {
   if (/["\\]/.test(label)) throw new Error(`A POS label containing a quote or backslash cannot be matched safely: ${label}`);
   return label;
 }
+
+// Observed 2026-09-21 (run-1789983778356): the order detail is a modal sheet
+// over the Orders list, not a full screen, and it blocks the tab bar
+// underneath. Its only dismiss control is the action bar's primary button,
+// whose NAME is shared with other sheets, so it is matched on its label.
+export const orderDetailModal = '~Screen.OrderDetailsScreen';
+export const orderDetailCloseButton = '-ios predicate string:name == "Component.ActionBar.PrimaryActionButton" AND label == "Close"';

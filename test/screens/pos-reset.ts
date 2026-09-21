@@ -25,23 +25,42 @@ export const posReset = {
       // The variant picker sits above search and dismisses with Back.
       { screen: s.variantListScreen, action: s.customSaleCancelButton, label: 'Back', what: 'variant picker' },
       { screen: s.searchScreen, action: s.searchBackButton, label: 'Back', what: 'product search' },
+      // The refund-method chooser sits above the return cart and hides the
+      // cart controls, so a rehearsal that stops there left the next reset
+      // unable to find Clear cart at all (run-1789985005794). Back returns to
+      // the cart with its lines intact, which the Clear cart step then empties.
+      { screen: s.refundMethodTitle, action: s.refundMethodBack, label: 'Back', what: 'refund method chooser' },
+      // The return/exchange picker is not a Screen.*; its action-bar title is
+      // the only thing that says it is open, and Back leaves the cart intact
+      // so the Clear cart step below still empties it.
+      { screen: s.returnSheetTitle, action: s.returnSheetBack, label: 'Back', what: 'return picker' },
+      // The order detail is a modal over the Orders list and it blocks the
+      // tab bar, so a reset that skipped it tapped Home into the modal's
+      // backdrop and then timed out waiting for a cart that was never
+      // reachable (run-1789983778356).
+      { screen: s.orderDetailModal, action: s.orderDetailCloseButton, label: 'Close', what: 'order detail' },
     ];
     const openNames = new Set<string>();
-    const openQuery = `-ios predicate string:name IN {${surfaces.map(step => `"${step.screen.slice(1)}"`).join(', ')}}`;
+    const named = surfaces.filter(step => step.screen.startsWith('~'));
+    const openQuery = `-ios predicate string:name IN {${named.map(step => `"${step.screen.slice(1)}"`).join(', ')}}`;
     for (const element of await browser.$$(openQuery).getElements()) openNames.add((await element.getAttribute('name')) ?? '');
+    // Predicate-selected surfaces (the return picker) are probed individually.
+    for (const step of surfaces.filter(item => !item.screen.startsWith('~'))) {
+      if (await isPresent(step.screen)) openNames.add(step.screen);
+    }
 
     // Fast path: no overlay open, Home showing, no cart line. Four commands.
     let homeVisible = false;
     if (!openNames.size) {
       homeVisible = await browser.$(s.homeScreen).isDisplayed();
-      if (homeVisible && !await isPresent(s.anyCartLineItem)) {
+      if (homeVisible && !await isPresent(s.anyCartLineItem) && !await isPresent(s.anySharedCartLine)) {
         await pos.assertEmptyCart();
         return;
       }
     }
 
     for (const step of surfaces) {
-      if (!openNames.has(step.screen.slice(1))) continue;
+      if (!openNames.has(step.screen.startsWith('~') ? step.screen.slice(1) : step.screen)) continue;
       let action = await browser.$(step.action).getElement();
       for (const candidate of await browser.$$(step.action)) {
         if (await candidate.isDisplayed()) { action = candidate; break; }
@@ -75,13 +94,16 @@ export const posReset = {
     // Observed dual-purpose control: "Add cart" when empty, "Clear cart" when
     // the cart holds lines (and it keeps that label, disabled, after a sale).
     // It is tapped only while the cart actually holds a line.
-    if (await isPresent(s.anyCartLineItem)) {
+    // A sale cart holds Screen.Cart.cartLineItem-N; a return or exchange cart
+    // holds SharedCart.ReturnLineItem/LineItem instead. Clear cart empties both.
+    if (await isPresent(s.anyCartLineItem) || await isPresent(s.anySharedCartLine)) {
       const clear = browser.$(s.addCartButton);
       if (await clear.getAttribute('label') !== 'Clear cart' || !await clear.isEnabled()) {
         throw new Error('The POS cart holds lines but does not offer an enabled "Clear cart" control; inspect this POS version.');
       }
       await clear.click();
       await waitForGone(s.anyCartLineItem, { timeout: 20_000, timeoutMsg: 'The POS cart did not reach the observed empty state after cleanup.' });
+      await waitForGone(s.anySharedCartLine, { timeout: 20_000, timeoutMsg: 'The POS return cart still holds lines after Clear cart.' });
     }
     await pos.assertEmptyCart();
   },
