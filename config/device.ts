@@ -39,7 +39,19 @@ export function buildCapabilities(config: DeviceConfig) {
     'appium:wdaStartupRetries': 1,
     'appium:wdaLaunchTimeout': 120_000,
     'appium:newCommandTimeout': 120,
-    'appium:settings': { snapshotMaxDepth: 62 },
+    // XCTest waits for the app's main thread to idle before every action. This
+    // capability is in SECONDS (the earlier value of 1500 made WDA log "Waiting
+    // up to 1500s"). Shopify POS goes idle quickly on the screens we drive, so
+    // a two-second bound costs nothing when it idles and stops a single action
+    // from stalling for minutes when it does not. Zero would skip the wait and
+    // drop taps outright.
+    'appium:waitForIdleTimeout': 2,
+    'appium:showXcodeLog': true,
+    'appium:allowProvisioningDeviceRegistration': true,
+    // snapshotMaxDepth exposes the POS rows in page source. useFirstMatch makes
+    // every single-element lookup return the first match instead of building
+    // the whole match set first; we only ever look elements up by exact id.
+    'appium:settings': { snapshotMaxDepth: 62, useFirstMatch: true },
   };
   assertNativeSessionPreservesAccess(capabilities);
   return capabilities;

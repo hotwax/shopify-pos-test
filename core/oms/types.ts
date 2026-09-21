@@ -25,6 +25,33 @@ export interface OmsShop {
   locationGid: string | null;
   currency: string | null;
   timezone: string | null;
+  apiVersion: string | null;
+}
+
+export interface OmsPosOrderItem { title: string; quantity: number }
+
+export interface OmsPosOrder {
+  gid: string;
+  name: string;
+  createdAt: string | null;
+  financialStatus: string | null;
+  fulfillmentStatus: string | null;
+  customerName: string | null;
+  total: { amount: string; currency: string } | null;
+  items: OmsPosOrderItem[];
+  /** True when the order has more lines than the preview shows. */
+  hasMoreItems: boolean;
+}
+
+export interface OmsCustomer {
+  gid: string;
+  displayName: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  phone: string | null;
+  orderCount: number | null;
+  location: string | null;
 }
 
 export interface OmsVariant {
@@ -33,6 +60,23 @@ export interface OmsVariant {
   title: string;
   productTitle: string;
   sku: string | null;
+  price: string | null;
+  compareAtPrice: string | null;
+  availableForSale: boolean | null;
+  productStatus: string | null;
+  imageUrl: string | null;
+  inventoryTracked: boolean | null;
+  // Stock at the expected POS location. `null` means it was not read (no
+  // location scope) or the item is untracked, which is not the same as zero.
+  availableAtLocation: number | null;
+  totalInventory: number | null;
+  // Variant facts of the parent product. POS adds a product with only the
+  // default variant straight to the cart but opens a variant picker for a
+  // multi-variant product, so the planner records which to expect. `null`
+  // means the field was not read (the unscoped explorer query) or Shopify
+  // reported an inexact count.
+  hasOnlyDefaultVariant: boolean | null;
+  productVariantCount: number | null;
 }
 
 export interface OmsOrder {
@@ -52,6 +96,10 @@ export interface OmsShopifyOrderLine {
   sku: string | null;
   productGid: string | null;
   productTitle: string | null;
+  // Same product variant facts as OmsVariant, so a cart seeded from an order
+  // can plan the POS add-to-cart path too.
+  hasOnlyDefaultVariant: boolean | null;
+  productVariantCount: number | null;
 }
 
 export interface OmsShopifyOrderTransaction {
@@ -79,6 +127,14 @@ export interface OmsShopifyOrderAgreement {
   sales: OmsShopifyOrderAgreementSale[];
 }
 
+export interface OmsOrderCustomer {
+  gid: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+}
+
 export interface OmsShopifyOrderDetail {
   gid: string;
   legacyResourceId: string | null;
@@ -87,6 +143,7 @@ export interface OmsShopifyOrderDetail {
   fulfillmentStatus: string | null;
   total: { amount: string; currency: string } | null;
   paymentGatewayNames: string[];
+  customer: OmsOrderCustomer | null;
   transactions: OmsShopifyOrderTransaction[];
   agreements: OmsShopifyOrderAgreement[];
   lines: OmsShopifyOrderLine[];
@@ -142,7 +199,9 @@ export interface OmsService {
   login(connectionId: string, credentials: { username: string; password: string }): Promise<OmsConnectionSummary>;
   logout(connectionId: string): Promise<void>;
   shops(connectionId: string): Promise<OmsShop[]>;
-  searchVariants(connectionId: string, connectorShopId: string, input: { search: string; cursor?: string }): Promise<Page<OmsVariant>>;
+  searchVariants(connectionId: string, connectorShopId: string, input: { search: string; cursor?: string; locationGid?: string }): Promise<Page<OmsVariant>>;
+  searchCustomers(connectionId: string, connectorShopId: string, input: { search: string; cursor?: string }): Promise<Page<OmsCustomer>>;
+  listPosOrders(connectionId: string, connectorShopId: string, input?: { cursor?: string }): Promise<Page<OmsPosOrder>>;
   searchOrders(connectionId: string, connectorShopId: string, input: { search: string; cursor?: string }): Promise<Page<OmsOrder>>;
   resolveOrder(connectionId: string, connectorShopId: string, input: { gid: string; cursor?: string }): Promise<OmsShopifyOrderDetail>;
   searchOrderRecords(connectionId: string, input: { search?: string; cursor?: string }): Promise<Page<OmsOrderRecord>>;

@@ -10,58 +10,35 @@ Appium/WDA test runner, OMS reads, local run history and safety checks. Shopify
 POS stays the unmodified App Store app. Only the separate open-source
 WebDriverAgent (WDA) helper is built and signed.
 
-**Status: the standalone localhost shell, setup wizard, script catalog,
-read-only run history, OMS browser and Shopify POS planning page are
-implemented.** The scripted Home → Orders → first order test has passed on a
-real iPad. The native test reads accessibility identifiers and order text
-through WDA; it does not need Device Hub, image recognition, Shopify source
-code or Shopify POS binaries. Create/return/exchange cards currently collect
-reviewable inputs and explain their safety gates; they remain blocked until
-native POS context and transaction selectors are verified on the target build.
+## Quick Start
 
-## Start the application
+### 1. Prerequisites (One-time setup on a fresh Mac)
+* **Xcode** (Install from the Mac App Store; launch it once to install internal components).
+* **Node.js 24+** (Install from [nodejs.org](https://nodejs.org) or run `brew install node`).
 
-The normal teammate workflow is `./run.sh` from this repository's root:
+### 2. Launch the Application
+Open **Terminal** and run:
 
-1. Open **Finder**.
-2. Press **Command+Shift+G**.
-3. Enter `~/Documents/GitHub/iosTesting` and press **Return**.
-4. Right-click the `iosTesting` folder, choose **Services → New Terminal at
-   Folder**. If that menu is unavailable, open **Terminal** with Command+Space
-   and run:
+```sh
+cd ~/Documents/GitHub/iosTesting
+./run.sh
+```
 
-   ```sh
-   cd ~/Documents/GitHub/iosTesting
-   ```
+**That's it!** `./run.sh` will automatically:
+* Check your Node and Xcode versions
+* Install dependencies (`npm ci`)
+* Build the local interface (`npm run build`)
+* Start the local server on `http://127.0.0.1:8127`
+* Open your browser directly to the **Onboarding** setup wizard
 
-5. Run:
+All device discovery, Mac health checks, iPad pairing, and configuration are handled via button clicks in the browser.
 
-   ```sh
-   ./run.sh
-   ```
+### 3. Stopping the Application
+To stop the local server, press `Control + C` in the Terminal window running `./run.sh`.
 
-6. Keep that Terminal window open. The launcher checks prerequisites, builds the
-   local app when needed, starts the single localhost process and opens the
-   browser. Press **Control+C** in that same Terminal window to stop it.
+---
 
-7. In the browser, use **Get setup** to save an iPad/signing profile and run
-   read-only readiness checks, **Scripts** to browse and launch checked-in
-   scripts, and **Run history** to review accepted runs. The first GUI script
-   is deliberately read-only: it opens the first existing POS order and checks
-   its detail reference. The **Connections** page also supports read-only OMS
-   browsing: Shopify shops, variants, Shopify orders/locations, and OMS order
-   records with item-level returnability. The Shopify POS page lets a tester
-   choose create/return/exchange, select the real shop/location and source
-   data, and review why each mutation is blocked. POS transaction execution
-   remains disabled until its separate native-context and safety checks are
-   complete.
-
-Do not start AccxUI, a separate frontend, a separate backend, or a manually
-started Appium server for the finished toolkit. Xcode, iPad trust/signing,
-Developer Mode, POS sign-in and any OMS login remain explicit setup steps inside
-the supported workflow.
-
-## Setup
+## Detailed Architecture & Advanced Setup
 
 1. Install full Xcode and its iOS support, launch it once, and select it under
    Xcode Settings → Locations → Command Line Tools. Use a Node version matching
@@ -92,7 +69,7 @@ the supported workflow.
    host-side RemoteXPC tunnel registry before running native tests:
 
    ```sh
-   sudo appium driver run xcuitest tunnel-creation
+   sudo env "PATH=$PATH" npx --no-install appium driver run xcuitest tunnel-creation
    ```
 
    Complete the Mac authorization if prompted and leave this Terminal running.
@@ -114,8 +91,17 @@ needed. Each teammate keeps their own `.env` and signing keys outside Git. Do no
 export keys, passwords, profiles or Shopify credentials into this project. The
 OMS page supports the verified BASIC login mode and named, read-only shop,
 variant, Shopify order/location, and OMS order/detail reads. The sidecar keeps
-the bearer token in memory until logout or restart; it does not persist the
-password or token. The page stores only recently used OMS instance names in
+the bearer token in memory until logout or restart and never writes the token to
+disk. A password is stored only when you explicitly tick **Remember this
+connection** on the OMS page: it is encrypted with AES-256-GCM under a key held
+in your macOS login Keychain and written to `.runtime/oms-credentials.json`
+(mode 0600, gitignored). The file alone is useless without your Keychain, and you
+can remember as many instance/user pairs as you like. Remembered connections sign
+in automatically when the server starts, so a normal start needs no login; a
+locked Keychain, a changed password or an OMS that is down degrades to a manual
+login rather than blocking startup. **Forget** deletes a stored password
+immediately. Anyone who can unlock your Mac account can use a remembered
+connection, so do not remember a production credential. The page stores only recently used OMS instance names in
 browser local storage and reconstructs their HTTPS origins when selected, so a
 teammate can return to an instance without retyping its URL. No arbitrary
 GraphQL text, Shopify mutation or POS
@@ -200,6 +186,84 @@ uses the observed More → Settings navigation, records the current
 `Screen.Settings.LocationsItem` label, captures local XML/PNG evidence, and
 returns POS to Home. It does not toggle screen lock, change the location,
 logout, or modify store data.
+
+### Cash-sale building blocks
+
+`pos.create-cash-order` is assembled from small reusable routines rather than
+one long script, so a later place-order-then-exchange flow can chain the same
+pieces:
+
+- `test/screens/pos-cart.ts` adds one line by exact Shopify id.
+  `addSingleVariantItemToCart` expects the product tap itself to add the cart
+  line; `addMultiVariantItemToCart` expects the tap to open
+  `Screen.VariantList` and then chooses the exact variant id. `addItemToCart`
+  dispatches on the line's planned `variantSelection` and, when the plan is
+  `unknown`, watches which surface POS opens and reports it. A plan that
+  disagrees with what POS opened fails closed with the operator action named.
+- `test/screens/pos-checkout.ts` bounds the cart total from the checkout
+  control, opens checkout, selects Cash and takes the exact amount. On POS
+  11.14.0 tapping the exact-amount chip completes the sale by itself; Apply is
+  only pressed when the surface stays open. `finishReceipt` then closes the
+  `Screen.CheckoutComplete` receipt surface (Done, never Email or Text) and
+  requires Home with an empty cart, so the next sale or a chained exchange
+  starts from the same state. Each run writes `cash-sale.json` with the
+  tendered amount and, per line, the planned and observed variant path.
+- `test/flows/cash-sale.ts` chains them: `buildCart` → `readBoundedCartTotal`
+  → `payExactCash`, or `createCashSale` for all three. `payExactCash` takes a
+  `beforeCommit` hook that runs after the amount is verified and right before
+  the irreversible tap.
+- The spec records the sale in the coordinator's business-effect ledger. It
+  records the commit attempt in `beforeCommit`, reads the newest order
+  reference from the POS Orders tab (read-only, newest first), correlates it
+  to one exact Shopify order through the coordinator's OMS bridge, reads that
+  order back, checks the lines and cash tender, then records the order as a
+  `shopify-order` resource and confirms the effect. A failure after the
+  attempt ends in `needs-reconciliation`, never in a clean "failed". Both
+  launchers (`server/index.ts` and `scripts/dev.ts`) wire the bridge handlers;
+  without them the run cannot confirm and is reconciled.
+
+Speed of a run rests on four decisions, all measured on the iPad:
+
+- One Appium server per local host (`core/runner/appium-server.ts`), started
+  on the first run. With `useNewWDA: false` the XCUITest driver keeps
+  WebDriverAgent alive on the iPad after a session ends and reuses it for the
+  next one, which only works while the server that launched it is still
+  running. Each run copies its own byte range of the shared server log into
+  its artifact log, so failure classification and step logs are unchanged.
+- One lookup per poll in the screen objects. The device is quick to act; the
+  cost was asking it three or four questions per tick. `assertEmptyCart` reads
+  five attributes instead of twelve, waits use `waitForDisplayed` or a single
+  predicate query, and the after-payment check is Home plus a disabled
+  checkout control.
+- The sale is correlated through the OMS, not the POS Orders tab: the one POS
+  order created since the commit time with the tendered total and line count
+  (`resolveRecentPosOrder`). Shopify still verifies it through the OMS
+  read-back before the effect is confirmed.
+- Screenshots only on the success path; the accessibility XML is captured by
+  the failure hook when something goes wrong.
+
+`pos.inspect-walk` is the read-only discovery walker: it captures the current
+POS surface, then performs the requested taps or typing one step at a time
+(`steps[].selector`, optional `type`, optional `tap: "coordinate"`), capturing
+after each. It refuses any control whose label reads like a committing action
+unless that exact label is listed in `allowLabels`. It leaves POS where it
+stops; run `pos.navigate-home` and `pos.clear-cart` afterwards. The returns
+and exchanges plan in `docs/superpowers/plans/2026-09-21-returns-and-exchanges.md`
+records what it found.
+
+`appium:waitForIdleTimeout` is in seconds; it is 2. `useFirstMatch` is on so
+single-element lookups return their first match. Mutation scenarios run
+`posReset.clearCartAndReturnHome()` after the spec, pass or fail, and record
+the outcome in `reset.json`. `pos.build-cart-only` rehearses the cart phase
+with the standard two-line fixture and clears the cart without paying, so
+timing work does not create orders.
+
+The planner decides `variantSelection` while the order is built, from
+Shopify's `hasOnlyDefaultVariant` and `variantsCount` (read through the OMS
+proxy), shows it on each cart line and freezes it into the run parameters. A
+product with only its default variant is `single`; one with several variants
+is `multi`; unread facts, or a product with exactly one non-default variant,
+are `unknown`. See `shared/variant-selection.ts`.
 
 Only one iPad/worker is used. No app reset, reinstall, forced restart, automatic
 alert acceptance, whole-test retries, checkout, refunds or order modifications.

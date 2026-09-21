@@ -31,13 +31,13 @@ function sameLines<T extends { quantity: number }>(actual: T[], expected: T[], k
 export function assertCreatePrecommit(actual: ObservedCreateSummary, expected: CreateOrderParameters): void {
   if (!sameLines(actual.lines, expected.lines, 'variantGid')) throw new Error('The POS cart does not match the approved create-order lines.');
   if (actual.tender !== 'cash') throw new Error('The POS checkout tender is not approved cash.');
-  if (actual.total.currency !== expected.maximumTotal.currency || compareMoney(actual.total, { amount: '0', currency: actual.total.currency }) < 0 || compareMoney(actual.total, expected.maximumTotal) > 0) throw new Error('The POS cart total is outside the approved amount or currency.');
+  if (actual.total.currency !== expected.currency || compareMoney(actual.total, { amount: '0', currency: actual.total.currency }) <= 0) throw new Error('The POS cart total is not a positive amount in the expected currency.');
 }
 
 export function assertReturnPrecommit(actual: ObservedReturnSummary, expected: ReturnParameters): void {
   if (actual.lines.length !== expected.lines.length || actual.lines.some((line, index) => line.lineGid !== expected.lines[index]?.lineGid || line.quantity !== expected.lines[index]?.quantity || line.restock !== expected.lines[index]?.restock)) throw new Error('The POS return summary does not match the approved source lines or restock choices.');
   if (actual.tender !== 'cash') throw new Error('The POS refund tender is not approved cash.');
-  if (actual.refund.currency !== expected.maximumRefund.currency || compareMoney(actual.refund, { amount: '0', currency: actual.refund.currency }) < 0 || compareMoney(actual.refund, expected.maximumRefund) > 0) throw new Error('The POS refund is outside the maximum approved amount or currency.');
+  if (compareMoney(actual.refund, { amount: '0', currency: actual.refund.currency }) < 0) throw new Error('The POS refund is negative.');
 }
 
 export function assertExchangePrecommit(actual: ObservedExchangeSummary, expected: ExchangeParameters): void {

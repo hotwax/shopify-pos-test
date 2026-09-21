@@ -5,6 +5,30 @@ export const searchVariantsQuery = `query SearchVariants($first: Int!, $after: S
   }
 }`;
 
+// The planner needs the price and the stock the operator will actually see at
+// the expected POS location, so it uses this location-scoped document. It also
+// reads the product's variant facts (hasOnlyDefaultVariant, variantsCount): POS
+// adds a single-variant product directly but opens a variant picker for a
+// multi-variant one, and the run is told which path to expect. The
+// unscoped SearchVariants above is kept byte-for-byte for the OMS explorer,
+// which has no location context.
+export const searchVariantsAtLocationQuery = `query SearchVariantsAtLocation($first: Int!, $after: String, $query: String, $locationId: ID!) {
+  productVariants(first: $first, after: $after, query: $query) {
+    nodes {
+      id title sku price compareAtPrice availableForSale inventoryQuantity
+      image { url altText }
+      product { id title status hasOnlyDefaultVariant variantsCount { count precision } featuredImage { url altText } }
+      inventoryItem {
+        tracked
+        inventoryLevel(locationId: $locationId) {
+          quantities(names: ["available"]) { name quantity }
+        }
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}`;
+
 export const searchOrdersQuery = `query SearchOrders($first: Int!, $after: String, $query: String) {
   orders(first: $first, after: $after, query: $query) {
     nodes { id name displayFinancialStatus displayFulfillmentStatus }
@@ -15,6 +39,7 @@ export const searchOrdersQuery = `query SearchOrders($first: Int!, $after: Strin
 export const resolveOrderQuery = `query ResolveOrder($id: ID!, $lineFirst: Int!, $lineAfter: String) {
   order(id: $id) {
     id legacyResourceId name displayFinancialStatus displayFulfillmentStatus paymentGatewayNames
+    customer { id firstName lastName email phone }
     transactions { id kind status gateway amountSet { shopMoney { amount currencyCode } } }
     agreements(first: 25) {
       nodes {
@@ -36,10 +61,38 @@ export const resolveOrderQuery = `query ResolveOrder($id: ID!, $lineFirst: Int!,
       nodes {
         id quantity refundableQuantity
         originalUnitPriceSet { shopMoney { amount currencyCode } }
-        variant { id title sku product { id title } }
+        variant { id title sku product { id title hasOnlyDefaultVariant variantsCount { count precision } } }
       }
       pageInfo { hasNextPage endCursor }
     }
+  }
+}`;
+
+// Recent POS-originated orders for the "use an existing order" picker. The
+// source filter and sort are baked into the reviewed document so no caller can
+// widen it to every order in the store.
+export const listPosOrdersQuery = `query ListPosOrders($first: Int!, $after: String) {
+  orders(first: $first, after: $after, query: "source_name:pos", sortKey: CREATED_AT, reverse: true) {
+    nodes {
+      id name createdAt displayFinancialStatus displayFulfillmentStatus
+      customer { displayName }
+      totalPriceSet { shopMoney { amount currencyCode } }
+      lineItems(first: 5) {
+        nodes { title quantity }
+        pageInfo { hasNextPage }
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}`;
+
+export const searchCustomersQuery = `query SearchCustomers($first: Int!, $after: String, $query: String) {
+  customers(first: $first, after: $after, query: $query) {
+    nodes {
+      id displayName firstName lastName email phone numberOfOrders
+      defaultAddress { city province country }
+    }
+    pageInfo { hasNextPage endCursor }
   }
 }`;
 
@@ -52,7 +105,10 @@ export const listLocationsQuery = `query ListLocations($first: Int!, $after: Str
 
 export const namedReadQueries = {
   searchVariants: searchVariantsQuery,
+  searchVariantsAtLocation: searchVariantsAtLocationQuery,
   searchOrders: searchOrdersQuery,
+  searchCustomers: searchCustomersQuery,
+  listPosOrders: listPosOrdersQuery,
   resolveOrder: resolveOrderQuery,
   listLocations: listLocationsQuery,
 } as const;

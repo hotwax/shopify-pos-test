@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { listDevices, probeRemoteXpcTunnel, readDeviceLockState, requiresRemoteXpc, runSetupChecks, type CommandRunner } from '../../core/setup/checks.ts';
+import { listDevices, listDevelopmentTeamIds, probeRemoteXpcTunnel, readDeviceLockState, requiresRemoteXpc, runHostChecks, runSetupChecks, type CommandRunner } from '../../core/setup/checks.ts';
 import type { DeviceProfile } from '../../shared/contracts.ts';
 
 const profile: DeviceProfile = {
@@ -40,6 +40,17 @@ function lockStateKey(): string {
 
 test('reads CoreDevice lock state without changing the iPad', async () => {
   assert.deepEqual(await readDeviceLockState(profile.udid, runner({ [lockStateKey()]: lockedDevice })), { passcodeRequired: true, unlockedSinceBoot: true });
+});
+
+test('extracts only Apple development team IDs for onboarding defaults', async () => {
+  const identities = await listDevelopmentTeamIds(runner({
+    'security find-identity -v -p codesigning': [
+      '  1) 0123456789ABCDEF0123456789ABCDEF01234567 "Apple Development: Developer (ABCDE12345)"',
+      '  2) 89ABCDEF0123456789ABCDEF0123456789ABCDEF "iPhone Distribution: Release (RELEASE1234)"',
+      '  3) 0123456789ABCDEF0123456789ABCDEF01234568 "Apple Development: Another (ABCDE12345)"',
+    ].join('\\n'),
+  }));
+  assert.deepEqual(identities, ['ABCDE12345']);
 });
 
 test('accepts only a healthy local RemoteXPC tunnel registry response', async () => {
@@ -101,19 +112,25 @@ test('reports unpaired, unsupported and not-installed device states', async () =
 });
 
 test('never marks WDA or POS Home ready without a user-owned live session', async () => {
-  const checks = await runSetupChecks(profile, runner({
-    'xcode-select -p': '/Applications/Xcode.app/Contents/Developer',
-    'xcodebuild -version': 'Xcode 27.0\nBuild version 27A266a',
-    [`xcrun devicectl device info details --device ${profile.udid} --timeout 15 --json-output - --omit-deprecated-fields-in-json`]: pairedDevice,
-    [lockStateKey()]: lockedDevice,
-    [`xcrun devicectl device info apps --device ${profile.udid} --include-default-apps --bundle-id com.jadedpixel.pos --timeout 15 --json-output - --omit-deprecated-fields-in-json`]: posApps,
-    'security find-identity -v -p codesigning': '1) ABCDE Apple Development: Test',
-  }));
-  assert.equal(checks.find(check => check.id === 'wda.session')?.state, 'action');
-  assert.equal(checks.find(check => check.id === 'pos.home')?.state, 'action');
-  assert.equal(checks.find(check => check.id === 'device.unlocked')?.state, 'action');
-  assert.equal(checks.find(check => check.id === 'device.remote-xpc')?.state, 'action');
-  assert.match(checks.find(check => check.id === 'device.unlocked')?.message ?? '', /locked/i);
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (async () => { throw new Error('Connection refused'); }) as typeof fetch;
+    const checks = await runSetupChecks(profile, runner({
+      'xcode-select -p': '/Applications/Xcode.app/Contents/Developer',
+      'xcodebuild -version': 'Xcode 27.0\nBuild version 27A266a',
+      [`xcrun devicectl device info details --device ${profile.udid} --timeout 15 --json-output - --omit-deprecated-fields-in-json`]: pairedDevice,
+      [lockStateKey()]: lockedDevice,
+      [`xcrun devicectl device info apps --device ${profile.udid} --include-default-apps --bundle-id com.jadedpixel.pos --timeout 15 --json-output - --omit-deprecated-fields-in-json`]: posApps,
+      'security find-identity -v -p codesigning': '1) ABCDE Apple Development: Test',
+    }));
+    assert.equal(checks.find(check => check.id === 'wda.session')?.state, 'action');
+    assert.equal(checks.find(check => check.id === 'pos.home')?.state, 'action');
+    assert.equal(checks.find(check => check.id === 'device.unlocked')?.state, 'action');
+    assert.equal(checks.find(check => check.id === 'device.remote-xpc')?.state, 'action');
+    assert.match(checks.find(check => check.id === 'device.unlocked')?.message ?? '', /locked/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('parses device discovery without exposing process output beyond safe identity fields', async () => {
@@ -137,4 +154,16 @@ test('parses the current CoreDevice properties shape without changing device set
   assert.equal(checks.find(check => check.id === 'device.pairing')?.state, 'ready');
   assert.equal(checks.find(check => check.id === 'device.developer')?.state, 'ready');
   assert.equal(checks.find(check => check.id === 'device.os')?.state, 'ready');
+});
+
+test('runs host checks independently of an iPad profile', async () => {
+  const checks = await runHostChecks(runner({
+    'xcode-select -p': '/Applications/Xcode.app/Contents/Developer',
+    'xcodebuild -version': 'Xcode 27.0\nBuild version 27A266a',
+    'security find-identity -v -p codesigning': '  1) 0123456789ABCDEF0123456789ABCDEF01234567 "Apple Development: Developer (ABCDE12345)"',
+  }));
+  assert.equal(checks.find(check => check.id === 'host.node')?.state, 'ready');
+  assert.equal(checks.find(check => check.id === 'host.xcode')?.state, 'ready');
+  assert.equal(checks.find(check => check.id === 'signing.identity')?.state, 'ready');
+  assert.ok(checks.some(check => check.id === 'host.remote-xpc'));
 });

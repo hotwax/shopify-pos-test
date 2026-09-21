@@ -29,7 +29,26 @@ export interface ShopifyOrderBridgeRequest {
   requestedAt: string;
 }
 
-export type BridgeRequest = ObservedOrderBridgeRequest | ShopifyOrderBridgeRequest;
+export interface RecentOrderBridgeInput {
+  /** ISO time captured just before the committing tap on POS. */
+  notBefore: string;
+  totalAmount: string;
+  totalCurrency: string;
+  lineCount: number;
+}
+
+export interface RecentOrderBridgeRequest {
+  id: string;
+  runId: string;
+  operation: 'resolveRecentOrder';
+  notBefore: string;
+  totalAmount: string;
+  totalCurrency: string;
+  lineCount: number;
+  requestedAt: string;
+}
+
+export type BridgeRequest = ObservedOrderBridgeRequest | ShopifyOrderBridgeRequest | RecentOrderBridgeRequest;
 
 export interface ObservedOrderBridgeResponse {
   id: string;
@@ -52,7 +71,18 @@ export interface ShopifyOrderBridgeResponse {
   respondedAt: string;
 }
 
-export type BridgeResponse = ObservedOrderBridgeResponse | ShopifyOrderBridgeResponse;
+export interface RecentOrderBridgeResponse {
+  id: string;
+  runId: string;
+  operation: 'resolveRecentOrder';
+  ok: boolean;
+  orderGid?: string;
+  orderName?: string;
+  error?: string;
+  respondedAt: string;
+}
+
+export type BridgeResponse = ObservedOrderBridgeResponse | ShopifyOrderBridgeResponse | RecentOrderBridgeResponse;
 
 export type BridgeResponseData =
   | { ok: true; orderGid: string; orderName: string }
@@ -92,6 +122,13 @@ function validateObservedInput(input: ObservedOrderBridgeInput): void {
 
 function validateShopifyOrderInput(input: ShopifyOrderBridgeInput): void {
   if (!exactOrderGid(input.orderGid)) throw new Error('The Shopify order identity is invalid.');
+}
+
+function validateRecentInput(input: RecentOrderBridgeInput): void {
+  if (typeof input.notBefore !== 'string' || input.notBefore.length > 40 || !Number.isFinite(Date.parse(input.notBefore))) throw new Error('The recent-order commit time is invalid.');
+  if (typeof input.totalAmount !== 'string' || !/^\d+(?:\.\d{1,4})?$/.test(input.totalAmount)) throw new Error('The recent-order total amount is invalid.');
+  if (typeof input.totalCurrency !== 'string' || !/^[A-Z]{3}$/.test(input.totalCurrency)) throw new Error('The recent-order total currency is invalid.');
+  if (!Number.isSafeInteger(input.lineCount) || input.lineCount < 1 || input.lineCount > 1000) throw new Error('The recent-order line count is invalid.');
 }
 
 async function writeAtomic(file: string, value: unknown): Promise<void> {
@@ -152,6 +189,10 @@ function boundedOrder(value: unknown): OmsShopifyOrderDetail | null {
       sku: line.sku === null ? null : boundedText(line.sku, 120),
       productGid,
       productTitle: line.productTitle === null ? null : boundedText(line.productTitle, 200),
+      // Variant facts only ever narrow to a boolean or a small non-negative
+      // integer; anything else crosses as "not read".
+      hasOnlyDefaultVariant: typeof line.hasOnlyDefaultVariant === 'boolean' ? line.hasOnlyDefaultVariant : null,
+      productVariantCount: Number.isSafeInteger(line.productVariantCount) && line.productVariantCount >= 0 && line.productVariantCount <= 100_000 ? line.productVariantCount : null,
     };
   });
   if (lines.some(line => line === null)) return null;
@@ -197,6 +238,9 @@ function boundedOrder(value: unknown): OmsShopifyOrderDetail | null {
     name,
     financialStatus: boundedText(item.financialStatus, 80),
     fulfillmentStatus: boundedText(item.fulfillmentStatus, 80),
+    // The customer is planning metadata for the browser only. The native worker
+    // has no use for it, so no customer PII crosses this boundary.
+    customer: null,
     total: item.total === null ? null : boundedMoney(item.total),
     paymentGatewayNames,
     transactions,
@@ -223,6 +267,12 @@ function parseRequest(value: unknown): BridgeRequest | undefined {
     catch { return undefined; }
     return { id: item.id, runId: item.runId, operation: 'readShopifyOrder', orderGid: item.orderGid, requestedAt: item.requestedAt };
   }
+  if (item.operation === 'resolveRecentOrder') {
+    const input = { notBefore: item.notBefore, totalAmount: item.totalAmount, totalCurrency: item.totalCurrency, lineCount: item.lineCount } as RecentOrderBridgeInput;
+    try { validateRecentInput(input); }
+    catch { return undefined; }
+    return { id: item.id, runId: item.runId, operation: 'resolveRecentOrder', ...input, requestedAt: item.requestedAt };
+  }
   return undefined;
 }
 
@@ -235,9 +285,10 @@ function parseResponse(value: unknown, request: BridgeRequest): BridgeResponse |
   const item = value as Record<string, unknown>;
   if (item.id !== request.id || item.runId !== request.runId || item.operation !== request.operation || typeof item.ok !== 'boolean' || typeof item.respondedAt !== 'string' || !Number.isFinite(Date.parse(item.respondedAt))) return undefined;
   if (item.ok) {
-    if (request.operation === 'resolveObservedOrder') {
+    if (request.operation === 'resolveObservedOrder' || request.operation === 'resolveRecentOrder') {
       if (!exactOrderGid(item.orderGid) || typeof item.orderName !== 'string' || !item.orderName.trim() || item.orderName.length > 120) return undefined;
-      return { id: request.id, runId: request.runId, operation: request.operation, ok: true, orderGid: item.orderGid, orderName: item.orderName.trim(), respondedAt: item.respondedAt };
+      const located = { id: request.id, runId: request.runId, ok: true as const, orderGid: item.orderGid, orderName: item.orderName.trim(), respondedAt: item.respondedAt };
+      return request.operation === 'resolveObservedOrder' ? { ...located, operation: 'resolveObservedOrder' } : { ...located, operation: 'resolveRecentOrder' };
     }
     const order = boundedOrder(item.order);
     if (!order || order.gid !== request.orderGid) return undefined;
@@ -261,6 +312,16 @@ export async function createShopifyOrderRequest(root: string, runId: string, inp
   validRunId(runId);
   validateShopifyOrderInput(input);
   const request: ShopifyOrderBridgeRequest = { id: randomUUID(), runId, operation: 'readShopifyOrder', orderGid: input.orderGid, requestedAt: new Date().toISOString() };
+  const file = requestFile(root, request);
+  await mkdir(resolve(file, '..'), { recursive: true });
+  await writeFile(file, JSON.stringify(request), { flag: 'wx' });
+  return request;
+}
+
+export async function createRecentOrderRequest(root: string, runId: string, input: RecentOrderBridgeInput): Promise<RecentOrderBridgeRequest> {
+  validRunId(runId);
+  validateRecentInput(input);
+  const request: RecentOrderBridgeRequest = { id: randomUUID(), runId, operation: 'resolveRecentOrder', notBefore: input.notBefore, totalAmount: input.totalAmount, totalCurrency: input.totalCurrency, lineCount: input.lineCount, requestedAt: new Date().toISOString() };
   const file = requestFile(root, request);
   await mkdir(resolve(file, '..'), { recursive: true });
   await writeFile(file, JSON.stringify(request), { flag: 'wx' });

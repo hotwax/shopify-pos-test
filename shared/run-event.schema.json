@@ -9,7 +9,7 @@
     "runId": { "type": "string", "pattern": "^[a-zA-Z0-9_-]{1,100}$" },
     "sequence": { "type": "integer", "minimum": 1 },
     "at": { "type": "string", "format": "date-time" },
-    "type": { "enum": ["run-state", "step-started", "step-finished", "assertion", "artifact", "approval-required", "business-effect"] },
+    "type": { "enum": ["run-state", "step-started", "step-finished", "assertion", "artifact", "business-effect"] },
     "stepId": { "type": "string", "maxLength": 100 },
     "data": { "type": "object", "maxProperties": 50 }
   }

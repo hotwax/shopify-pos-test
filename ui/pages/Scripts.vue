@@ -1,14 +1,21 @@
 <template>
   <ion-page>
-    <ion-header><ion-toolbar><ion-title>Scripts</ion-title></ion-toolbar></ion-header>
+    <ion-header>
+      <ion-toolbar>
+        <ion-buttons slot="start">
+          <ion-back-button></ion-back-button>
+        </ion-buttons>
+        <ion-title>Scripts</ion-title>
+      </ion-toolbar>
+    </ion-header>
     <ion-content class="ion-padding">
       <ion-searchbar v-model="filter" placeholder="Filter scripts by name or tag" aria-label="Filter scripts" />
       <ion-text color="medium" v-if="loading">Loading catalog…</ion-text>
       <ion-text color="danger" v-else-if="error">{{ error }}</ion-text>
       <template v-else>
         <ion-list v-if="filteredScripts.length">
-          <ion-item v-for="script in filteredScripts" :key="script.id" :router-link="`/scripts/${script.id}`">
-            <ion-label><h2>{{ script.name }}</h2><p>{{ script.description }}</p></ion-label>
+          <ion-item v-for="script in filteredScripts" :key="script.id" :router-link="`/scripts/${script.id}`" router-direction="forward">
+            <ion-label>{{ script.name }}<p>{{ script.description }}</p></ion-label>
             <ion-badge slot="end" color="success">{{ script.assertionMode }}</ion-badge>
           </ion-item>
         </ion-list>
@@ -20,7 +27,7 @@
 </template>
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { IonBadge, IonCard, IonCardContent, IonContent, IonHeader, IonItem, IonLabel, IonList, IonNote, IonPage, IonSearchbar, IonText, IonTitle, IonToolbar } from '@ionic/vue';
+import { IonBackButton, IonBadge, IonButtons, IonCard, IonCardContent, IonContent, IonHeader, IonItem, IonLabel, IonList, IonNote, IonPage, IonSearchbar, IonText, IonTitle, IonToolbar } from '@ionic/vue';
 import type { ScriptDefinition } from '../../shared/contracts.ts';
 import { getCatalog } from '../api.ts';
 

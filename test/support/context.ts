@@ -1,30 +1,33 @@
 import type { TransactionIntent } from '../../shared/transaction.ts';
-import { consumeApproval, requestApproval } from '../../core/runner/approval.ts';
-import { consumeBridgeResponse, createObservedOrderRequest, createShopifyOrderRequest } from '../../core/runner/bridge.ts';
+import { consumeBridgeResponse, createObservedOrderRequest, createRecentOrderRequest, createShopifyOrderRequest } from '../../core/runner/bridge.ts';
 import { consumeCommitCheckpoint, writeCommitCheckpoint } from '../../core/runner/checkpoint.ts';
 import { consumeCommitAcknowledgement, consumeCommitOutcomeAcknowledgement, requestCommitAttempt, requestCommitOutcome } from '../../core/runner/effects.ts';
 import { recordResource } from '../../core/runner/resources.ts';
-import { assertAllowedIntent, hashIntent } from '../../core/safety/intent.ts';
+import { assertAllowedIntent } from '../../core/safety/intent.ts';
 import type { PosContextEvidence } from '../../core/safety/environment.ts';
 import { loadApprovedTargets } from '../../core/safety/policy.ts';
-import type { OmsShopifyOrderDetail } from '../../shared/contracts.ts';
+import type { Money, OmsShopifyOrderDetail } from '../../shared/contracts.ts';
 
 export interface ScenarioContext {
   step<T>(name: string, operation: () => Promise<T>): Promise<T>;
   assertAllowedIntent(intent: TransactionIntent, evidence: PosContextEvidence): Promise<void>;
-  requireApproval(intent: TransactionIntent): Promise<{ intentHash: string }>;
   recordCommitAttempt(intentHash: string): Promise<void>;
   recordBusinessEffect(effect: 'confirmed' | 'unknown', intentHash: string): Promise<void>;
   recordResource(kind: string, gid: string): Promise<void>;
   checkStopped(): void;
   resolveObservedOrder(input: { observedName: string; runMarker?: string }): Promise<{ orderGid: string; orderName: string }>;
+  /**
+   * Finds the one POS order created since `notBefore` with exactly this total
+   * and line count, through the coordinator's OMS bridge. It returns an
+   * identity only; the caller still reads the order back from Shopify.
+   */
+  resolveRecentOrder(input: { notBefore: string; total: Money; lineCount: number }): Promise<{ orderGid: string; orderName: string }>;
   readShopifyOrder(orderGid: string): Promise<OmsShopifyOrderDetail>;
 }
 
 export interface ScenarioContextOptions {
   root: string;
   runId: string;
-  approvalTimeoutMs?: number;
   commitAckTimeoutMs?: number;
   effectAckTimeoutMs?: number;
   bridgeTimeoutMs?: number;
@@ -35,12 +38,12 @@ export function unavailableScenarioContext(): ScenarioContext {
   return {
     step: async (_name, operation) => operation(),
     assertAllowedIntent: unavailable,
-    requireApproval: unavailable,
     recordCommitAttempt: unavailable,
     recordBusinessEffect: unavailable,
     recordResource: unavailable,
     checkStopped: () => undefined,
     resolveObservedOrder: unavailable,
+    resolveRecentOrder: unavailable,
     readShopifyOrder: unavailable,
   };
 }
@@ -52,24 +55,6 @@ export function createScenarioContext(options: ScenarioContextOptions = { root: 
     assertAllowedIntent: async (intent, evidence) => {
       const approvedTargets = await loadApprovedTargets(options.root);
       assertAllowedIntent(intent, evidence, approvedTargets);
-    },
-    requireApproval: async intent => {
-      const intentHash = hashIntent(intent);
-      await requestApproval(options.root, options.runId, intentHash, {
-        scenario: intent.scenario,
-        direction: intent.expectedDirection,
-        amount: intent.maximumAbsoluteAmount,
-        lineCount: intent.returnLines.length + intent.purchaseLines.length,
-        ...(intent.originalOrderGid ? { sourceOrderGid: intent.originalOrderGid } : {}),
-      });
-      const timeout = options.approvalTimeoutMs ?? 30 * 60 * 1000;
-      if (!Number.isSafeInteger(timeout) || timeout <= 0) throw new Error('The approval timeout is invalid.');
-      const deadline = Date.now() + timeout;
-      while (Date.now() < deadline) {
-        if (await consumeApproval(options.root, options.runId, intentHash)) return { intentHash };
-        await new Promise(resolve => setTimeout(resolve, 250));
-      }
-      throw new Error('The transaction approval checkpoint expired before it was approved.');
     },
     recordCommitAttempt: async intentHash => {
       await writeCommitCheckpoint(options.root, options.runId, intentHash);
@@ -110,6 +95,21 @@ export function createScenarioContext(options: ScenarioContextOptions = { root: 
         await new Promise(resolve => setTimeout(resolve, 250));
       }
       throw new Error('The OMS did not respond to the observed-order correlation request.');
+    },
+    resolveRecentOrder: async input => {
+      const request = await createRecentOrderRequest(options.root, options.runId, { notBefore: input.notBefore, totalAmount: input.total.amount, totalCurrency: input.total.currency, lineCount: input.lineCount });
+      const timeout = options.bridgeTimeoutMs ?? 5 * 60 * 1000;
+      if (!Number.isSafeInteger(timeout) || timeout <= 0) throw new Error('The recent-order bridge timeout is invalid.');
+      const deadline = Date.now() + timeout;
+      while (Date.now() < deadline) {
+        const response = await consumeBridgeResponse(options.root, request);
+        if (response) {
+          if (!response.ok || response.operation !== 'resolveRecentOrder' || !response.orderGid || !response.orderName) throw new Error(response.error ?? 'The OMS could not correlate the sale to one POS order.');
+          return { orderGid: response.orderGid, orderName: response.orderName };
+        }
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      throw new Error('The OMS did not respond to the recent-order correlation request.');
     },
     readShopifyOrder: async orderGid => {
       const request = await createShopifyOrderRequest(options.root, options.runId, { orderGid });

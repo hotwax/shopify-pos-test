@@ -10,7 +10,7 @@ import { readWorkerInput, writeWorkerInput } from '../../core/runner/input.ts';
 const request: RunRequest = {
   scriptId: 'pos.create-cash-order',
   deviceProfileId: 'test-ipad',
-  parameters: { lines: [{ variantGid: 'gid://shopify/ProductVariant/1', quantity: 1 }], maximumTotal: { amount: '20.00', currency: 'USD' } },
+  parameters: { lines: [{ variantGid: 'gid://shopify/ProductVariant/1', quantity: 1 }], currency: 'USD' },
   assertionMode: 'pos-shopify',
   expectedRevision: 'revision-1',
 };

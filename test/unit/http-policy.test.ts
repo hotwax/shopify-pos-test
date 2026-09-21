@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -8,8 +8,8 @@ import { OmsClient } from '../../core/oms/client.ts';
 import { createCoordinator } from '../../core/runner/coordinator.ts';
 import type { OmsService } from '../../core/oms/types.ts';
 
-async function withServer(run: (url: string) => Promise<void>): Promise<void> {
-  const server = await createApiServer({ port: 0, mode: 'test', root: process.cwd() });
+async function withServer(run: (url: string) => Promise<void>, root = process.cwd()): Promise<void> {
+  const server = await createApiServer({ port: 0, mode: 'test', root });
   try {
     await run(`http://127.0.0.1:${server.port}`);
   } finally {
@@ -65,7 +65,18 @@ test('rejects hostile origins and unknown API paths', async () => {
   });
 });
 
+test('accepts the configured localhost Vite proxy host', async () => {
+  const server = await createApiServer({ port: 0, mode: 'test', root: process.cwd(), allowedOrigins: ['http://127.0.0.1:8127'] });
+  try {
+    const response = await fetch(`${server.url}/api/health`, { headers: { Host: '127.0.0.1:8127' } });
+    assert.equal(response.status, 200);
+  } finally {
+    await server.close();
+  }
+});
+
 test('exposes setup profiles and empty run history through the authenticated local API', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-http-profiles-'));
   await withServer(async url => {
     const port = new URL(url).port;
     const health = await fetch(`${url}/api/health`, { headers: { Host: `127.0.0.1:${port}` } });
@@ -79,6 +90,18 @@ test('exposes setup profiles and empty run history through the authenticated loc
     const runs = await fetch(`${url}/api/runs`, { headers });
     assert.equal(runs.status, 200);
     assert.ok(Array.isArray((await runs.json() as { runs: unknown[] }).runs));
+  }, root);
+});
+
+test('exposes safe onboarding defaults without returning certificate names or hashes', async () => {
+  await withServer(async url => {
+    const port = new URL(url).port;
+    const defaults = await fetch(`${url}/api/setup/defaults`, { headers: { Host: `127.0.0.1:${port}`, 'X-Local-Session': (await (await fetch(`${url}/api/health`, { headers: { Host: `127.0.0.1:${port}` } })).json() as { sessionToken: string }).sessionToken } });
+    assert.equal(defaults.status, 200);
+    const body = await defaults.json() as { developmentTeamIds: string[]; recommendedWdaBundleId: string };
+    assert.ok(Array.isArray(body.developmentTeamIds));
+    assert.match(body.recommendedWdaBundleId, /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/);
+    assert.doesNotMatch(JSON.stringify(body), /Apple Development|BEGIN|PRIVATE KEY|[A-Fa-f0-9]{40}/);
   });
 });
 
@@ -123,10 +146,12 @@ test('keeps OMS credentials on the localhost sidecar and exposes only named read
     health: async () => ({ id: 'local', label: 'Test OMS', origin: 'https://oms.example', state: 'connected', userId: 'user-1' }),
     login: async (_id, credentials) => { receivedPassword = credentials.password; return { id: 'local', label: 'Test OMS', origin: 'https://oms.example', state: 'connected', userId: 'user-1' }; },
     logout: async () => undefined,
-    shops: async () => [{ connectorShopId: 'shop-1', shopGid: 'gid://shopify/Shop/1', shopDomain: 'test.myshopify.com', name: 'Test', locationGid: null, currency: 'USD', timezone: 'UTC' }],
+    shops: async () => [{ connectorShopId: 'shop-1', shopGid: 'gid://shopify/Shop/1', shopDomain: 'test.myshopify.com', name: 'Test', locationGid: null, currency: 'USD', timezone: 'UTC', apiVersion: '2026-01' }],
     searchVariants: async () => ({ items: [], nextCursor: null }),
+    searchCustomers: async () => ({ items: [], nextCursor: null }),
+    listPosOrders: async () => ({ items: [], nextCursor: null }),
     searchOrders: async () => ({ items: [], nextCursor: null }),
-    resolveOrder: async () => ({ gid: 'gid://shopify/Order/1', legacyResourceId: '1', name: '#1', financialStatus: 'PAID', fulfillmentStatus: null, total: { amount: '1.00', currency: 'USD' }, paymentGatewayNames: [], transactions: [], agreements: [], lines: [], nextCursor: null }),
+    resolveOrder: async () => ({ gid: 'gid://shopify/Order/1', legacyResourceId: '1', name: '#1', financialStatus: 'PAID', fulfillmentStatus: null, total: { amount: '1.00', currency: 'USD' }, paymentGatewayNames: [], customer: null, transactions: [], agreements: [], lines: [], nextCursor: null }),
     searchOrderRecords: async () => ({ items: [{ orderId: 'M1', orderName: 'M1', externalId: null, statusId: 'ORDER_APPROVED', orderDate: null, grandTotal: null, currency: null, itemCount: 0 }], nextCursor: null }),
     getOrderDetail: async () => ({ orderId: 'M1', orderName: 'M1', externalId: null, statusId: 'ORDER_APPROVED', orderDate: null, grandTotal: null, currency: null, items: [] }),
     listLocations: async () => ({ items: [], nextCursor: null }),
@@ -173,25 +198,6 @@ test('keeps OMS credentials on the localhost sidecar and exposes only named read
   }
 });
 
-test('approval endpoint does not expose filesystem errors and requires a pending checkpoint', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'ios-testing-http-'));
-  const coordinator = createCoordinator({ root });
-  const server = await createApiServer({ port: 0, mode: 'test', root, coordinator });
-  try {
-    const port = new URL(server.url).port;
-    const response = await fetch(`${server.url}/api/runs/missing-run/approve`, {
-      method: 'POST',
-      headers: { Host: `127.0.0.1:${port}`, 'X-Local-Session': server.sessionToken },
-    });
-    assert.equal(response.status, 409);
-    const body = await response.json() as { error: string };
-    assert.equal(body.error, 'Run was not found.');
-    assert.doesNotMatch(body.error, /ios-testing-http/);
-  } finally {
-    await server.close();
-  }
-});
-
 test('run requests reject a partial or unsafe frozen target context', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ios-testing-http-context-'));
   const server = await createApiServer({ port: 0, mode: 'test', root, coordinator: createCoordinator({ root }) });
@@ -224,11 +230,62 @@ test('exposes mutation readiness without claiming a policy-only store is safe', 
     const response = await fetch(`${server.url}/api/pos/mutation-readiness`, {
       headers: { Host: `127.0.0.1:${port}`, 'X-Local-Session': server.sessionToken },
     });
-    assert.equal(response.status, 200);
-    const body = await response.json() as { enabled: boolean; reasons: string[] };
-    assert.equal(body.enabled, false);
-    assert.ok(body.reasons.some(reason => /native POS context/i.test(reason)));
+    assert.equal(response.status, 404);
   } finally {
     await server.close();
   }
+});
+
+test('lists only safe-named run artifacts, serves screenshots as PNGs, and blocks unsafe or unauthenticated reads', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-http-artifacts-'));
+  const runId = 'run-artifact-test';
+  const artifactsDir = join(root, '.runtime', 'runs', runId, 'artifacts');
+  await mkdir(join(artifactsDir, 'nested'), { recursive: true });
+  const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+  await writeFile(join(artifactsDir, 'cart-before-payment.png'), pngBytes);
+  await writeFile(join(artifactsDir, 'progress.ndjson'), '{}\n');
+  // A name a browser would never produce from this run's own writer, kept on
+  // disk to prove the listing filters it out rather than merely not creating it.
+  await writeFile(join(artifactsDir, 'weird name.png'), pngBytes);
+  await writeFile(join(artifactsDir, 'nested', 'inner.png'), pngBytes);
+
+  await withServer(async url => {
+    const port = new URL(url).port;
+
+    // (d) No session header is rejected the same way every other /api route is.
+    const unauthenticated = await fetch(`${url}/api/runs/${runId}/artifacts`, { headers: { Host: `127.0.0.1:${port}` } });
+    assert.equal(unauthenticated.status, 401);
+
+    const health = await fetch(`${url}/api/health`, { headers: { Host: `127.0.0.1:${port}` } });
+    const { sessionToken } = await health.json() as { sessionToken: string };
+    const headers = { Host: `127.0.0.1:${port}`, 'X-Local-Session': sessionToken };
+
+    // (a) The listing only reports the two safely-named regular files.
+    const list = await fetch(`${url}/api/runs/${runId}/artifacts`, { headers });
+    assert.equal(list.status, 200);
+    const body = await list.json() as { artifacts: { name: string; kind: string; size: number; modifiedAt: string }[] };
+    assert.deepEqual(body.artifacts.map(entry => entry.name).sort(), ['cart-before-payment.png', 'progress.ndjson']);
+    const screenshot = body.artifacts.find(entry => entry.name === 'cart-before-payment.png');
+    assert.equal(screenshot?.kind, 'screenshot');
+    assert.equal(screenshot?.size, pngBytes.length);
+    assert.ok(typeof screenshot?.modifiedAt === 'string' && !Number.isNaN(Date.parse(screenshot.modifiedAt)));
+    assert.equal(body.artifacts.find(entry => entry.name === 'progress.ndjson')?.kind, 'file');
+
+    // (b) The PNG is served with the right content type and the exact bytes.
+    const png = await fetch(`${url}/api/runs/${runId}/artifacts/cart-before-payment.png`, { headers });
+    assert.equal(png.status, 200);
+    assert.equal(png.headers.get('content-type'), 'image/png');
+    assert.deepEqual(Buffer.from(await png.arrayBuffer()), pngBytes);
+
+    // (c) A non-PNG file, an encoded traversal attempt, and a name containing
+    // a literal slash are all rejected with 404, never a 200 or a 500.
+    const nonPng = await fetch(`${url}/api/runs/${runId}/artifacts/progress.ndjson`, { headers });
+    assert.equal(nonPng.status, 404);
+
+    const encodedTraversal = await fetch(`${url}/api/runs/${runId}/artifacts/..%2F..%2Fpackage.json`, { headers });
+    assert.equal(encodedTraversal.status, 404);
+
+    const slashName = await fetch(`${url}/api/runs/${runId}/artifacts/nested/inner.png`, { headers });
+    assert.equal(slashName.status, 404);
+  }, root);
 });

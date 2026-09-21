@@ -4,6 +4,7 @@ import type { DeviceProfile, SetupCheck } from '../../shared/contracts.ts';
 
 const execFileAsync = promisify(execFile);
 export type CommandRunner = (file: string, args: string[]) => Promise<string>;
+const developmentIdentityPattern = /(?:Apple Development|iPhone Developer):[^\n]*\(([A-Z0-9]{10})\)"?\s*$/;
 
 const command: CommandRunner = async (file, args) => {
   const result = await execFileAsync(file, args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 });
@@ -48,7 +49,7 @@ export interface DeviceLockState {
 
 export type RemoteXpcTunnelProbe = () => Promise<boolean>;
 
-export const remoteXpcTunnelBlockedMessage = 'The iOS RemoteXPC tunnel is not running. Start it from a separate Terminal with `sudo appium driver run xcuitest tunnel-creation`, then start a fresh native run. The toolkit did not change iPad access settings.';
+export const remoteXpcTunnelBlockedMessage = 'The iOS RemoteXPC tunnel is not running. Start it from a separate Terminal with `sudo env "PATH=$PATH" npx --no-install appium driver run xcuitest tunnel-creation`, then start a fresh native run. The toolkit did not change iPad access settings.';
 
 /**
  * Read-only check for Appium's RemoteXPC tunnel registry. The registry is a
@@ -108,6 +109,29 @@ export async function listDevices(run: CommandRunner = command): Promise<{ udid:
   }).filter((device: { udid: string; model: string }) => device.udid && device.model.toLowerCase().includes('ipad'));
 }
 
+/**
+ * Read only the team IDs from local development identities. Certificate names,
+ * hashes and account details never leave this process; the UI only needs a
+ * team ID to prefill the WDA profile.
+ */
+export async function listDevelopmentTeamIds(run: CommandRunner = command): Promise<string[]> {
+  const teams = new Set<string>();
+  try {
+    const xcodeOutput = await run('defaults', ['read', 'com.apple.dt.Xcode', 'IDEProvisioningTeamByIdentifier']);
+    for (const match of xcodeOutput.matchAll(/teamID\s*=\s*([A-Z0-9]{10})/g)) {
+      teams.add(match[1]);
+    }
+  } catch { /* Xcode defaults might not be configured */ }
+  try {
+    const output = await run('security', ['find-identity', '-v', '-p', 'codesigning']);
+    for (const line of output.split(/\r?\n/)) {
+      const match = line.trim().match(developmentIdentityPattern);
+      if (match?.[1]) teams.add(match[1]);
+    }
+  } catch { /* Keychain identities check failed */ }
+  return [...teams];
+}
+
 export async function runSetupChecks(profile: DeviceProfile, run: CommandRunner = command): Promise<SetupCheck[]> {
   const checks: SetupCheck[] = [];
   const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
@@ -153,7 +177,7 @@ export async function runSetupChecks(profile: DeviceProfile, run: CommandRunner 
         'device.remote-xpc',
         tunnelReady ? 'ready' : 'action',
         tunnelReady ? 'The Appium RemoteXPC tunnel registry is available.' : 'The Appium RemoteXPC tunnel registry is not available for this iOS 18+ device.',
-        tunnelReady ? [] : ['In a separate Terminal, run `sudo appium driver run xcuitest tunnel-creation`, complete the Mac authorization if prompted, leave it running, then run setup checks again.'],
+        tunnelReady ? [] : ['In a separate Terminal, run `sudo env "PATH=$PATH" npx --no-install appium driver run xcuitest tunnel-creation`, complete the Mac authorization if prompted, leave it running, then run setup checks again.'],
       ));
     } else if (osReady) {
       checks.push(check('device.remote-xpc', 'ready', 'This iPadOS version uses the legacy device transport; a RemoteXPC tunnel is not required.'));
@@ -199,4 +223,43 @@ export async function runSetupChecks(profile: DeviceProfile, run: CommandRunner 
 
 export async function prepareWda(_profile: DeviceProfile): Promise<void> {
   throw new Error('WDA preparation requires Apple-owned signing/trust prompts. Complete those prompts in Xcode yourself, then rerun the read-only setup checks.');
+}
+
+export async function runHostChecks(run: CommandRunner = command): Promise<SetupCheck[]> {
+  const checks: SetupCheck[] = [];
+  const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(Number);
+  const nodeReady = (nodeMajor === 20 && nodeMinor >= 19) || (nodeMajor === 22 && nodeMinor >= 12) || nodeMajor >= 24;
+  checks.push(check('host.node', nodeReady ? 'ready' : 'blocked', nodeReady ? `Node ${process.versions.node} is supported.` : 'Node 20.19+, 22.12+ or 24+ is required.', nodeReady ? [] : ['Install the supported Node.js version.']));
+
+  let xcodeReady = false;
+  try {
+    const path = (await run('xcode-select', ['-p'])).trim();
+    if (!path.endsWith('/Contents/Developer')) {
+      checks.push(check('host.xcode', 'action', 'Command Line Tools are selected instead of full Xcode.', ['Open Xcode → Settings → Locations and select full Xcode.']));
+    } else {
+      const version = await run('xcodebuild', ['-version']);
+      xcodeReady = /^Xcode \d+/m.test(version);
+      checks.push(check('host.xcode', xcodeReady ? 'ready' : 'blocked', xcodeReady ? version.trim().replaceAll('\n', ' ') : 'Full Xcode did not report a usable version.', xcodeReady ? [] : ['Launch Xcode once and select it under Locations.']));
+    }
+  } catch (error) {
+    checks.push(check('host.xcode', 'blocked', `Xcode could not be checked: ${error instanceof Error ? error.message : String(error)}`, ['Install full Xcode and its command-line tools.']));
+  }
+
+  try {
+    const identities = await run('security', ['find-identity', '-v', '-p', 'codesigning']);
+    const ready = /^\s*\d+\) [A-Fa-f0-9]{40} "(?:Apple Development|iPhone Developer):/m.test(identities);
+    checks.push(check('signing.identity', ready ? 'ready' : 'action', ready ? 'A valid Apple development identity is available in Keychain.' : 'No valid Apple development identity is available.', ready ? [] : ['In Xcode → Settings → Apple Accounts → Manage Certificates, create Apple Development.']));
+  } catch (error) {
+    checks.push(check('signing.identity', 'action', `Signing identities could not be checked: ${error instanceof Error ? error.message : String(error)}`, ['Open Xcode and create an Apple Development certificate.']));
+  }
+
+  const tunnelReady = await probeRemoteXpcTunnel();
+  checks.push(check(
+    'host.remote-xpc',
+    tunnelReady ? 'ready' : 'action',
+    tunnelReady ? 'The Appium RemoteXPC tunnel registry is running.' : 'The Appium RemoteXPC tunnel registry is not running on port 42314.',
+    tunnelReady ? [] : ['In a separate Terminal, run `sudo env "PATH=$PATH" npx --no-install appium driver run xcuitest tunnel-creation`, complete the Mac authorization if prompted, and leave it running.']
+  ));
+
+  return checks;
 }

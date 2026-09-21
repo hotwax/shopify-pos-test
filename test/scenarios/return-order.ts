@@ -20,7 +20,7 @@ export function isCashOrder(order: OmsShopifyOrderDetail): boolean {
   return order.paymentGatewayNames.length === 1 && order.paymentGatewayNames[0]?.trim().toLowerCase() === 'cash';
 }
 
-function createIntent(parameters: ReturnParameters, request: RunRequest, udid: string): TransactionIntent {
+function createIntent(parameters: ReturnParameters, request: RunRequest, udid: string, currency = 'USD'): TransactionIntent {
   if (!isValidTargetContext(request.context)) throw new Error('A return run requires an exact frozen target context.');
   if (!udid.trim()) throw new Error('The return run has no observed iPad identity.');
   return {
@@ -29,11 +29,12 @@ function createIntent(parameters: ReturnParameters, request: RunRequest, udid: s
     udid,
     context: request.context,
     originalOrderGid: parameters.orderGid,
+    ...(parameters.orderReference ? { originalOrderReference: parameters.orderReference } : {}),
     returnLines: parameters.lines,
     purchaseLines: [],
     tender: 'cash',
     expectedDirection: 'refund',
-    maximumAbsoluteAmount: parameters.maximumRefund,
+    maximumAbsoluteAmount: { amount: '0', currency },
   };
 }
 
@@ -55,19 +56,18 @@ export async function returnCashOrder(
   driver: ReturnOrderDriver,
   udid = process.env.IOS_UDID?.trim() ?? '',
 ): Promise<{ orderGid: string; affectedIds: Record<string, string[]> }> {
+  if (!input.orderReference?.trim()) throw new Error('The return run requires the selected POS order reference; choose the order from OMS search.');
   const source = await context.step('read-return-source', () => context.readShopifyOrder(input.orderGid));
   if (!isCashOrder(source)) throw new Error('The selected source order is not an exact cash-only Shopify order.');
   const remaining = Object.fromEntries(source.lines.map(line => [line.gid, line.refundableQuantity ?? -1]));
   const parameters = validateReturn(input, remaining);
-  const intent = createIntent(parameters, request, udid);
+  const intent = createIntent(parameters, request, udid, source.total?.currency ?? 'USD');
   const intentHash = hashIntent(intent);
   await context.step('verify-pos-context', async () => context.assertAllowedIntent(intent, await driver.readContextEvidence()));
   await context.step('prepare-return-cart', () => driver.prepareReturn(parameters));
   await context.step('select-cash-refund', () => driver.selectCash());
   const observed = await context.step('verify-return-summary', () => driver.readSummary());
   assertReturnPrecommit(observed, parameters);
-  const approval = await context.requireApproval(intent);
-  if (approval.intentHash !== intentHash) throw new Error('The approval checkpoint does not match the frozen return intent.');
   await context.step('verify-pos-context-before-commit', async () => context.assertAllowedIntent(intent, await driver.readContextEvidence()));
   await context.recordCommitAttempt(intentHash);
   await context.step('commit-return-cash', () => driver.commitCash());

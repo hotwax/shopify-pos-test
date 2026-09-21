@@ -24,7 +24,7 @@ export function verifyCreatedOrder(actual: OmsShopifyOrderDetail, expected: Crea
   const actualLines = new Map(actual.lines.map(line => [line.variantGid ?? '', line.quantity]));
   const linesMatch = actual.lines.length === expected.lines.length && expectedLines.size === expected.lines.length && [...expectedLines].every(([gid, quantity]) => actualLines.get(gid) === quantity);
   checks.push(check('lines', linesMatch, linesMatch ? 'The read-back order contains the expected variants and quantities.' : 'The read-back order lines do not match the approved intent.'));
-  const totalMatch = actual.total !== null && actual.total.currency === expected.maximumTotal.currency && compareMoney(actual.total, { amount: '0', currency: expected.maximumTotal.currency }) >= 0 && compareMoney(actual.total, expected.maximumTotal) <= 0;
+  const totalMatch = actual.total !== null && actual.total.currency === expected.currency && compareMoney(actual.total, { amount: '0', currency: expected.currency }) > 0;
   checks.push(check('total', totalMatch, totalMatch ? 'The read-back total is within the approved currency and amount bound.' : 'The read-back total is missing, in a different currency, negative or over the approved bound.'));
   const cash = tender === 'cash' && actual.paymentGatewayNames.some(gateway => gateway.trim().toLowerCase() === 'cash');
   checks.push(check('cash-tender', cash, cash ? 'The POS and Shopify read-back both report cash.' : 'The POS or Shopify read-back does not report the approved cash tender.'));

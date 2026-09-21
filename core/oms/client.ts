@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import type { Page } from '../../shared/contracts.ts';
+import type {
+  OmsOrderCustomer, Page } from '../../shared/contracts.ts';
 import { buildOmsOrigin, normalizeOmsInstanceName } from '../../shared/oms-origin.ts';
 import { OmsSessionStore, type FetchLike } from './auth.ts';
-import { assertNamedReadQuery, listLocationsQuery, resolveOrderQuery, searchOrdersQuery, searchVariantsQuery, type NamedReadOperation } from './queries/documents.ts';
-import { OmsError, boundedCursor, boundedSearch, canonicalOrigin, type OmsConnectionConfig, type OmsConnectionDraft, type OmsConnectionSummary, type OmsLocation, type OmsOrder, type OmsOrderDetail, type OmsOrderItem, type OmsOrderRecord, type OmsService, type OmsShop, type OmsShopifyOrderAgreement, type OmsShopifyOrderAgreementSale, type OmsShopifyOrderDetail, type OmsShopifyOrderLine, type OmsShopifyOrderTransaction, type OmsVariant } from './types.ts';
+import { assertNamedReadQuery, listLocationsQuery, listPosOrdersQuery, resolveOrderQuery, searchCustomersQuery, searchOrdersQuery, searchVariantsAtLocationQuery, searchVariantsQuery, type NamedReadOperation } from './queries/documents.ts';
+import { OmsError, boundedCursor, boundedSearch, canonicalOrigin, type OmsConnectionConfig, type OmsConnectionDraft, type OmsConnectionSummary, type OmsLocation, type OmsOrder, type OmsOrderDetail, type OmsOrderItem, type OmsOrderRecord, type OmsService, type OmsCustomer, type OmsPosOrder, type OmsShop, type OmsShopifyOrderAgreement, type OmsShopifyOrderAgreementSale, type OmsShopifyOrderDetail, type OmsShopifyOrderLine, type OmsShopifyOrderTransaction, type OmsVariant } from './types.ts';
 
 function object(value: unknown): Record<string, any> {
   if (!value || typeof value !== 'object') throw new OmsError('invalid-data', 'The OMS returned an invalid JSON object.');
@@ -25,6 +26,35 @@ function page<T>(connection: Record<string, any>, map: (item: Record<string, any
   const nodes = array(connection.nodes ?? connection.edges?.map((edge: Record<string, any>) => edge?.node));
   const pageInfo = object(connection.pageInfo ?? {});
   return { items: nodes.map(map), nextCursor: pageInfo.hasNextPage && typeof pageInfo.endCursor === 'string' ? pageInfo.endCursor : null };
+}
+
+function optionalInteger(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
+// Shopify returns per-location stock as a named quantity list. A missing level
+// means the item is not stocked at that location, which is reported as unknown
+// rather than as a zero the operator might trust.
+function optionalBoolean(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
+// Shopify's `Count` carries a precision. Only an EXACT count is surfaced as a
+// number; an AT_LEAST lower bound is reported as null so the planner never
+// shows "3 variants" for a product that has thirty.
+function exactCount(value: unknown): number | null {
+  if (!value || typeof value !== 'object') return null;
+  const count = value as Record<string, unknown>;
+  if (count.precision !== undefined && count.precision !== 'EXACT') return null;
+  return optionalInteger(count.count);
+}
+
+function namedQuantity(level: unknown, name: string): number | null {
+  if (!level || typeof level !== 'object') return null;
+  const quantities = array((level as Record<string, any>).quantities);
+  const match = quantities.find(entry => String(entry.name ?? '') === name);
+  return match ? optionalInteger(match.quantity) : null;
 }
 
 function requiredString(value: unknown, label: string): string {
@@ -66,6 +96,33 @@ function optionalMoney(value: unknown): string | null {
     value = (value as Record<string, unknown>).amount;
   }
   return optionalString(value);
+}
+
+function orderCustomer(raw: unknown): OmsOrderCustomer | null {
+  // Planning metadata for a cloned order. Bounded and optional: an order with
+  // no customer, or one the session cannot read, simply has none.
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as Record<string, unknown>;
+  const gid = optionalString(value.id) ?? '';
+  const field = (input: unknown): string => (optionalString(input) ?? '').slice(0, 120);
+  const customer = { gid, firstName: field(value.firstName), lastName: field(value.lastName), email: field(value.email), phone: field(value.phone) };
+  return customer.gid || customer.firstName || customer.lastName || customer.email || customer.phone ? customer : null;
+}
+
+function httpsImageUrl(value: unknown): string | null {
+  const url = optionalString(value);
+  if (!url) return null;
+  try { return new URL(url).protocol === 'https:' ? url : null; } catch { return null; }
+}
+
+function shopIdentityGid(raw: Record<string, any>): string {
+  // OMS returns the Shopify shop as a bare numeric id, but every consumer of a
+  // frozen target context expects a GID. Project it the same way the primary
+  // location is projected, and pass an already-formed GID through untouched.
+  const direct = optionalString(raw.shopGid ?? raw.shop?.id);
+  if (direct) return direct;
+  const numeric = optionalString(raw.shopifyShopId);
+  return numeric && /^\d+$/.test(numeric) ? `gid://shopify/Shop/${numeric}` : String(numeric ?? '');
 }
 
 function shopPrimaryLocationGid(raw: Record<string, any>): string | null {
@@ -199,6 +256,8 @@ function mapShopifyOrder(raw: Record<string, any>): OmsShopifyOrderDetail {
       sku: optionalString(variant?.sku),
       productGid: optionalString(product?.id),
       productTitle: optionalString(product?.title),
+      hasOnlyDefaultVariant: optionalBoolean(product?.hasOnlyDefaultVariant),
+      productVariantCount: exactCount(product?.variantsCount),
     };
   });
   const pageInfo = raw.lineItems?.pageInfo && typeof raw.lineItems.pageInfo === 'object' ? raw.lineItems.pageInfo as Record<string, any> : {};
@@ -212,11 +271,23 @@ function mapShopifyOrder(raw: Record<string, any>): OmsShopifyOrderDetail {
     fulfillmentStatus: optionalString(raw.displayFulfillmentStatus),
     total: mapMoneySet(raw.totalPriceSet),
     paymentGatewayNames: boundedStrings(raw.paymentGatewayNames, 'payment gateway names', 20),
+    customer: orderCustomer(raw.customer),
     transactions,
     agreements,
     lines,
     nextCursor: pageInfo.hasNextPage && typeof pageInfo.endCursor === 'string' ? pageInfo.endCursor : null,
   };
+}
+
+function shopApiVersion(raw: Record<string, any>): string | null {
+  // The Shopify API version is configured on the OMS shop record, never supplied
+  // by the operator. `shopifyConfig` is a many-relationship in the ShopifyShop
+  // master, so it arrives as an array. Only a well-formed version is accepted,
+  // and configs that disagree are treated as unresolved rather than guessed.
+  const configs = Array.isArray(raw.shopifyConfig) ? raw.shopifyConfig : raw.shopifyConfig ? [raw.shopifyConfig] : [];
+  const candidates = [raw.apiVersion, ...configs.map((config: any) => object(config).apiVersion)];
+  const versions = new Set(candidates.map(value => String(value ?? '').trim()).filter(value => /^\d{4}-\d{2}$/.test(value)));
+  return versions.size === 1 ? [...versions][0] : null;
 }
 
 export class OmsClient implements OmsService {
@@ -290,12 +361,13 @@ export class OmsClient implements OmsService {
     const rows = Array.isArray(container) ? array(container) : array(container.shops ?? container.data ?? container.results);
     return rows.map(raw => ({
       connectorShopId: requiredString(raw.shopId ?? raw.connectorShopId ?? raw.id, 'a connector shop ID'),
-      shopGid: String(raw.shopifyShopId ?? raw.shopGid ?? raw.shop?.id ?? ''),
+      shopGid: shopIdentityGid(raw),
       shopDomain: String(raw.shopDomain ?? raw.domain ?? raw.shop?.domain ?? ''),
       name: String(raw.shopName ?? raw.name ?? raw.shop?.name ?? raw.shopDomain ?? 'Unnamed shop'),
       locationGid: shopPrimaryLocationGid(raw),
       currency: raw.currency ?? null,
       timezone: raw.timezone ?? null,
+      apiVersion: shopApiVersion(raw),
     }));
   }
 
@@ -324,9 +396,69 @@ export class OmsClient implements OmsService {
     return responseData(body);
   }
 
-  async searchVariants(connectionId: string, connectorShopId: string, input: { search: string; cursor?: string }): Promise<Page<OmsVariant>> {
-    const data = await this.graphql(connectionId, connectorShopId, 'searchVariants', searchVariantsQuery, { first: 25, after: boundedCursor(input.cursor), query: boundedSearch(input.search) || null });
-    return page(data.productVariants, raw => ({ gid: requiredString(raw.id, 'a variant ID'), productGid: requiredString(raw.product?.id, 'a product ID'), title: String(raw.title ?? 'Default'), productTitle: String(raw.product?.title ?? ''), sku: raw.sku == null ? null : String(raw.sku) }));
+  async searchVariants(connectionId: string, connectorShopId: string, input: { search: string; cursor?: string; locationGid?: string }): Promise<Page<OmsVariant>> {
+    const locationGid = String(input.locationGid ?? '').trim();
+    if (locationGid && !/^gid:\/\/shopify\/Location\/[A-Za-z0-9_-]+$/.test(locationGid)) throw new OmsError('invalid-data', 'The location scope must be an exact Shopify location GID.');
+    const variables = { first: 25, after: boundedCursor(input.cursor), query: boundedSearch(input.search) || null };
+    const data = locationGid
+      ? await this.graphql(connectionId, connectorShopId, 'searchVariantsAtLocation', searchVariantsAtLocationQuery, { ...variables, locationId: locationGid })
+      : await this.graphql(connectionId, connectorShopId, 'searchVariants', searchVariantsQuery, variables);
+    return page(data.productVariants, raw => ({
+      gid: requiredString(raw.id, 'a variant ID'),
+      productGid: requiredString(raw.product?.id, 'a product ID'),
+      title: String(raw.title ?? 'Default'),
+      productTitle: String(raw.product?.title ?? ''),
+      sku: raw.sku == null ? null : String(raw.sku),
+      price: optionalString(raw.price),
+      compareAtPrice: optionalString(raw.compareAtPrice),
+      availableForSale: typeof raw.availableForSale === 'boolean' ? raw.availableForSale : null,
+      productStatus: optionalString(raw.product?.status),
+      // A variant may have its own image; otherwise the product's featured one
+      // stands in. Only https URLs are surfaced to the browser.
+      imageUrl: httpsImageUrl(raw.image?.url ?? raw.product?.featuredImage?.url),
+      inventoryTracked: typeof raw.inventoryItem?.tracked === 'boolean' ? raw.inventoryItem.tracked : null,
+      availableAtLocation: locationGid ? namedQuantity(raw.inventoryItem?.inventoryLevel, 'available') : null,
+      totalInventory: optionalInteger(raw.inventoryQuantity),
+      hasOnlyDefaultVariant: optionalBoolean(raw.product?.hasOnlyDefaultVariant),
+      productVariantCount: exactCount(raw.product?.variantsCount),
+    }));
+  }
+
+  // Recent POS-originated orders, newest first, for the "use an existing order"
+  // picker. The item preview is capped by the reviewed document, so an order
+  // with more lines reports that rather than showing a short list as complete.
+  async listPosOrders(connectionId: string, connectorShopId: string, input: { cursor?: string } = {}): Promise<Page<OmsPosOrder>> {
+    const data = await this.graphql(connectionId, connectorShopId, 'listPosOrders', listPosOrdersQuery, { first: 25, after: boundedCursor(input.cursor) });
+    return page(data.orders, raw => {
+      const lineItems = object(raw.lineItems ?? {});
+      return {
+        gid: requiredString(raw.id, 'an order ID'),
+        name: requiredString(raw.name, 'an order name'),
+        createdAt: optionalString(raw.createdAt),
+        financialStatus: optionalString(raw.displayFinancialStatus),
+        fulfillmentStatus: optionalString(raw.displayFulfillmentStatus),
+        customerName: optionalString(raw.customer?.displayName),
+        total: mapMoneySet(raw.totalPriceSet),
+        items: array(lineItems.nodes).map(item => ({ title: String(item.title ?? 'Unnamed item'), quantity: optionalInteger(item.quantity) ?? 0 })),
+        hasMoreItems: object(lineItems.pageInfo ?? {}).hasNextPage === true,
+      };
+    });
+  }
+
+  // Read-only customer lookup for planning. It never creates or edits a
+  // customer; the app exposes no Shopify mutation.
+  async searchCustomers(connectionId: string, connectorShopId: string, input: { search: string; cursor?: string }): Promise<Page<OmsCustomer>> {
+    const data = await this.graphql(connectionId, connectorShopId, 'searchCustomers', searchCustomersQuery, { first: 25, after: boundedCursor(input.cursor), query: boundedSearch(input.search) || null });
+    return page(data.customers, raw => ({
+      gid: requiredString(raw.id, 'a customer ID'),
+      displayName: String(raw.displayName ?? [raw.firstName, raw.lastName].filter(Boolean).join(' ') ?? '').trim() || 'Unnamed customer',
+      firstName: optionalString(raw.firstName),
+      lastName: optionalString(raw.lastName),
+      email: optionalString(raw.email),
+      phone: optionalString(raw.phone),
+      orderCount: optionalInteger(raw.numberOfOrders),
+      location: [object(raw.defaultAddress ?? {}).city, object(raw.defaultAddress ?? {}).province, object(raw.defaultAddress ?? {}).country].map(part => String(part ?? '').trim()).filter(Boolean).join(', ') || null,
+    }));
   }
 
   async searchOrders(connectionId: string, connectorShopId: string, input: { search: string; cursor?: string }): Promise<Page<OmsOrder>> {

@@ -4,10 +4,10 @@ import { verifyCreatedOrder, verifyExchangedOrder, verifyReturnedOrder } from '.
 import type { OmsShopifyOrderDetail } from '../../shared/contracts.ts';
 import type { CreateOrderParameters, ExchangeParameters, ReturnParameters } from '../../core/safety/transaction-inputs.ts';
 
-const expected: CreateOrderParameters = { lines: [{ variantGid: 'gid://shopify/ProductVariant/1', quantity: 2 }], maximumTotal: { amount: '20.00', currency: 'USD' } };
+const expected: CreateOrderParameters = { lines: [{ variantGid: 'gid://shopify/ProductVariant/1', productGid: 'gid://shopify/Product/10256354705572', search: 'Test product', quantity: 2 }], currency: 'USD' };
 const actual: OmsShopifyOrderDetail = {
-  gid: 'gid://shopify/Order/1', legacyResourceId: '1', name: '#1', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '18.00', currency: 'USD' }, paymentGatewayNames: ['cash'], transactions: [], agreements: [], nextCursor: null,
-  lines: [{ gid: 'gid://shopify/LineItem/1', quantity: 2, refundableQuantity: 2, unitPrice: { amount: '9.00', currency: 'USD' }, variantGid: 'gid://shopify/ProductVariant/1', variantTitle: 'Blue', sku: 'BLUE', productGid: 'gid://shopify/Product/1', productTitle: 'Shirt' }],
+  gid: 'gid://shopify/Order/1', legacyResourceId: '1', name: '#1', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '18.00', currency: 'USD' }, paymentGatewayNames: ['cash'], customer: null, transactions: [], agreements: [], nextCursor: null,
+  lines: [{ gid: 'gid://shopify/LineItem/1', quantity: 2, refundableQuantity: 2, unitPrice: { amount: '9.00', currency: 'USD' }, variantGid: 'gid://shopify/ProductVariant/1', variantTitle: 'Blue', sku: 'BLUE', productGid: 'gid://shopify/Product/1', productTitle: 'Shirt', hasOnlyDefaultVariant: null, productVariantCount: null }],
 };
 
 test('verifies exact create-order lines, cash tender, currency and amount bound', () => {
@@ -32,8 +32,8 @@ test('requires Shopify read-back to identify the cash gateway', () => {
 
 const returnParameters: ReturnParameters = {
   orderGid: actual.gid,
-  lines: [{ lineGid: actual.lines[0]!.gid, quantity: 1, restock: true }],
-  maximumRefund: { amount: '20.00', currency: 'USD' },
+  lines: [{ lineGid: actual.lines[0]!.gid, quantity: 1, restock: true, reason: 'UNKNOWN' }],
+  refundMethod: 'cash',
 };
 
 const returned: OmsShopifyOrderDetail = {
@@ -54,7 +54,7 @@ test('rejects a return read-back with no exact line delta', () => {
 });
 
 test('verifies replacement variants for an exchange read-back', () => {
-  const exchange: ExchangeParameters = { ...returnParameters, replacements: [{ variantGid: 'gid://shopify/ProductVariant/2', quantity: 1 }], direction: 'collect', maximumDifference: { amount: '20.00', currency: 'USD' } };
+  const exchange: ExchangeParameters = { ...returnParameters, replacements: [{ variantGid: 'gid://shopify/ProductVariant/2', productGid: 'gid://shopify/Product/2', search: 'Replacement', quantity: 1 }], direction: 'collect', maximumDifference: { amount: '20.00', currency: 'USD' }, collectMethod: 'cash' };
   const after: OmsShopifyOrderDetail = {
     ...returned,
     lines: [...returned.lines, { ...actual.lines[0]!, gid: 'gid://shopify/LineItem/2', variantGid: 'gid://shopify/ProductVariant/2', refundableQuantity: 1 }],

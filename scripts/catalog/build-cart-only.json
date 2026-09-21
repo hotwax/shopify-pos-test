@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.build-cart-only",
+  "name": "Build cart only (timing rehearsal)",
+  "description": "Adds the standard two-line fixture (White Shirt, single variant; Hyperion Elements Jacket XS / Green, multi-variant) to the POS cart exactly as the cash order would, reads the total, then clears the cart. No checkout, no order. Use it to time the cart phase without creating test-store orders.",
+  "domain": "shopify-pos",
+  "scenario": "pos.build-cart-only",
+  "scenarioVersion": 1,
+  "parameters": {
+    "lines": [
+      { "variantGid": "gid://shopify/ProductVariant/51310233649316", "productGid": "gid://shopify/Product/10347124261028", "search": "White Shirt", "quantity": 1, "variantSelection": "single" },
+      { "variantGid": "gid://shopify/ProductVariant/44342252404900", "productGid": "gid://shopify/Product/8176602939556", "search": "Hyperion Elements Jacket", "quantity": 1, "variantSelection": "multi" }
+    ],
+    "currency": "USD"
+  },
+  "assertionMode": "pos",
+  "tags": ["utility", "timing", "cart", "test-store"]
+}

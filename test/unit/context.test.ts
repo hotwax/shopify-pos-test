@@ -3,9 +3,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { approveCheckpoint } from '../../core/runner/approval.ts';
 import { readBridgeRequests, writeBridgeResponse } from '../../core/runner/bridge.ts';
-import { hashIntent } from '../../core/safety/intent.ts';
 import type { PosContextEvidence } from '../../core/safety/environment.ts';
 import { createScenarioContext } from '../../test/support/context.ts';
 import type { TargetContext } from '../../shared/contracts.ts';
@@ -20,14 +18,6 @@ const intent: TransactionIntent = {
   purchaseLines: [{ variantGid: 'gid://shopify/ProductVariant/1', quantity: 1 }], returnLines: [],
   tender: 'cash', expectedDirection: 'collect', maximumAbsoluteAmount: { amount: '12.00', currency: 'USD' },
 };
-
-test('scenario approval waits for the exact one-time checkpoint', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'ios-testing-context-'));
-  const runId = 'run-context';
-  const pending = createScenarioContext({ root, runId }).requireApproval(intent);
-  setTimeout(() => { void approveCheckpoint(root, runId, hashIntent(intent)); }, 25);
-  assert.deepEqual(await pending, { intentHash: hashIntent(intent) });
-});
 
 test('scenario context rejects POS evidence that does not match the approved target', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ios-testing-context-policy-'));
@@ -74,7 +64,7 @@ test('scenario context reads a sanitized Shopify order through the owned bridge'
   const root = await mkdtemp(join(tmpdir(), 'ios-testing-context-order-'));
   const runId = 'run-context-order-bridge';
   const contextRunner = createScenarioContext({ root, runId, bridgeTimeoutMs: 1_000 });
-  const detail = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], transactions: [], agreements: [], lines: [], nextCursor: null };
+  const detail = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], customer: null, transactions: [], agreements: [], lines: [], nextCursor: null };
   const responder = (async () => {
     const deadline = Date.now() + 1_000;
     while (Date.now() < deadline) {

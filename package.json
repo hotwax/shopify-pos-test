@@ -41,6 +41,7 @@
     "ajv-formats": "3.0.1",
     "appium": "3.7.0",
     "appium-xcuitest-driver": "12.12.6",
+    "chrome-ide-trace": "^0.1.1",
     "dotenv": "18.0.1",
     "tsx": "4.23.13",
     "typescript": "7.0.2",
@@ -49,7 +50,13 @@
   "dependencies": {
     "@ionic/vue": "9.0.4",
     "@ionic/vue-router": "9.0.4",
+    "pinia": "^4.0.3",
     "vue": "3.5.43",
     "vue-router": "4.6.4"
+  },
+  "overrides": {
+    "chrome-ide-trace": {
+      "vite": "$vite"
+    }
   }
 }

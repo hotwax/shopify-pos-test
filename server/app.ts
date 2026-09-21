@@ -1,17 +1,19 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { lstat, open, readdir, readFile } from 'node:fs/promises';
+import { join, resolve, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { loadCatalog } from '../core/catalog/load.ts';
-import { listDevices, runSetupChecks } from '../core/setup/checks.ts';
+import { listDevices, listDevelopmentTeamIds, probeRemoteXpcTunnel, runHostChecks, runSetupChecks } from '../core/setup/checks.ts';
 import { loadDeviceProfiles, saveDeviceProfile } from '../core/storage/profiles.ts';
 import { createRunStorage } from '../core/storage/runs.ts';
 import { OmsError, type OmsService } from '../core/oms/types.ts';
-import type { DeviceProfile, RunRequest } from '../shared/contracts.ts';
+import type { DeviceProfile, RunRequest, SetupDefaults } from '../shared/contracts.ts';
 import type { RunCoordinator } from '../core/runner/coordinator.ts';
 import { createLocalSession, sessionMatches, type LaunchMode } from './session.ts';
 import { sendJson, sendText } from './routes.ts';
 import { serveStatic } from './static.ts';
 import { isValidTargetContext } from '../core/safety/environment.ts';
-import { readMutationReadiness } from '../core/safety/readiness.ts';
+import { forgetOmsCredential, listSavedOmsConnections, readOmsCredential, saveOmsCredential } from '../core/storage/credentials.ts';
 import { validateRunRequestAgainstCatalog } from '../core/catalog/validate.ts';
 import { registry } from '../test/scenarios/registry.ts';
 
@@ -33,10 +35,11 @@ export interface ServerHandle {
   close(): Promise<void>;
 }
 
-function loopbackHost(host: string | undefined, port: number): boolean {
+function loopbackHost(host: string | undefined, port: number, additionalHosts: string[] = []): boolean {
   if (!host) return false;
   const normalized = host.toLowerCase().replace(/^\[/, '').replace(/\]$/, '');
-  return normalized === `127.0.0.1:${port}` || normalized === `localhost:${port}` || normalized === `127.0.0.1` || normalized === 'localhost';
+  if (normalized === `127.0.0.1:${port}` || normalized === `localhost:${port}` || normalized === '127.0.0.1' || normalized === 'localhost') return true;
+  return additionalHosts.some(candidate => candidate.toLowerCase().replace(/^\[/, '').replace(/\]$/, '') === normalized);
 }
 
 function originAllowed(origin: string | undefined, allowed: string[]): boolean {
@@ -84,6 +87,8 @@ function validProfile(value: unknown): value is DeviceProfile {
   return typeof profile.id === 'string' && typeof profile.udid === 'string' && typeof profile.teamId === 'string' && typeof profile.wdaBundleId === 'string';
 }
 
+const recommendedWdaBundleId = 'co.hotwax.iosTesting.WDARunner';
+
 function validRunRequest(value: unknown): value is RunRequest {
   if (!value || typeof value !== 'object') return false;
   const request = value as Partial<RunRequest>;
@@ -97,6 +102,25 @@ function boundedText(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length <= max;
 }
 
+interface RunArtifact { name: string; kind: 'screenshot' | 'file'; size: number; modifiedAt: string }
+
+// Matches exactly what the run pipeline itself writes into an artifacts
+// directory: no path separators, no leading dot-segments. This is checked
+// again below with a resolved-path containment check before any file read,
+// since a name arriving on the wire is untrusted even after this test passes.
+const safeArtifactName = /^[A-Za-z0-9._-]+$/;
+
+function validArtifactName(name: string): boolean {
+  return safeArtifactName.test(name) && name !== '.' && name !== '..';
+}
+
+function sendPng(response: ServerResponse, buffer: Buffer): void {
+  response.statusCode = 200;
+  response.setHeader('Content-Type', 'image/png');
+  response.setHeader('Cache-Control', 'no-store');
+  response.end(buffer);
+}
+
 function validConnectionId(value: unknown): value is string { return boundedText(value, 80) && /^[a-zA-Z0-9_-]+$/.test(value); }
 
 function validConnectionDraft(value: unknown): value is { instanceName: string } {
@@ -105,11 +129,12 @@ function validConnectionDraft(value: unknown): value is { instanceName: string }
   return Object.keys(body).every(key => key === 'instanceName') && boundedText(body.instanceName, 64) && !!body.instanceName.trim();
 }
 
-function validShopRead(value: unknown): value is { connectionId: string; shopId: string; search?: string; cursor?: string } {
+function validShopRead(value: unknown): value is { connectionId: string; shopId: string; search?: string; cursor?: string; locationGid?: string } {
   if (!value || typeof value !== 'object') return false;
   const body = value as Record<string, unknown>;
   return validConnectionId(body.connectionId) && boundedText(body.shopId, 160) &&
-    (body.search === undefined || boundedText(body.search, 200)) && (body.cursor === undefined || boundedText(body.cursor, 512));
+    (body.search === undefined || boundedText(body.search, 200)) && (body.cursor === undefined || boundedText(body.cursor, 512)) &&
+    (body.locationGid === undefined || (typeof body.locationGid === 'string' && /^gid:\/\/shopify\/Location\/[A-Za-z0-9_-]{1,64}$/.test(body.locationGid)));
 }
 
 function validOrderRead(value: unknown): value is { connectionId: string; search?: string; cursor?: string } {
@@ -151,7 +176,13 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
     securityHeaders(response);
     const address = server.address();
     const port = typeof address === 'object' && address ? address.port : options.port;
-    if (!loopbackHost(request.headers.host, port)) {
+    const configuredProxyHosts = (options.allowedOrigins ?? []).flatMap(origin => {
+      try {
+        const parsed = new URL(origin);
+        return parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost' ? [parsed.host] : [];
+      } catch { return []; }
+    });
+    if (!loopbackHost(request.headers.host, port, configuredProxyHosts)) {
       sendJson(response, 403, { ok: false, error: 'Loopback host required.' });
       return;
     }
@@ -171,6 +202,22 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
       if (request.method === 'GET' && url.pathname === '/api/setup/devices') {
         try { sendJson(response, 200, { devices: await listDevices() }); }
         catch (error) { sendJson(response, 200, { devices: [], error: error instanceof Error ? error.message : 'Could not list devices.' }); }
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/api/setup/host') {
+        try { sendJson(response, 200, { checks: await runHostChecks() }); }
+        catch (error) { sendJson(response, 500, { ok: false, error: error instanceof Error ? error.message : 'Could not run host checks.' }); }
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/api/setup/tunnel') {
+        sendJson(response, 200, { ok: true, running: await probeRemoteXpcTunnel() });
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/api/setup/defaults') {
+        let developmentTeamIds: string[] = [];
+        try { developmentTeamIds = await listDevelopmentTeamIds(); } catch { /* the UI explains how to create a development identity */ }
+        const defaults: SetupDefaults = { developmentTeamIds, recommendedWdaBundleId };
+        sendJson(response, 200, defaults);
         return;
       }
       if (url.pathname.startsWith('/api/oms/')) {
@@ -205,6 +252,51 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
             sendJson(response, 200, { connection: await options.oms.login(body.connectionId, { username: body.username, password: body.password }) });
             return;
           }
+          // Saved connections. The password is encrypted at rest with a key held
+          // in the macOS Keychain and is never returned to the browser.
+          if (request.method === 'GET' && url.pathname === '/api/oms/saved') {
+            try { sendJson(response, 200, { saved: await listSavedOmsConnections(options.root) }); }
+            catch (error) { sendJson(response, 503, { ok: false, error: error instanceof Error ? error.message : 'Saved connections are unavailable.' }); }
+            return;
+          }
+          if (request.method === 'POST' && url.pathname === '/api/oms/saved') {
+            const body = await readBody(request) as Record<string, unknown>;
+            if (!boundedText(body.instanceName, 80) || !boundedText(body.username, 256) || !body.username.trim() || !boundedText(body.password, 256) || !body.password) {
+              sendJson(response, 400, { ok: false, error: 'An instance name, username and password are required.' });
+              return;
+            }
+            try {
+              sendJson(response, 201, { saved: await saveOmsCredential(options.root, {
+                instanceName: body.instanceName,
+                username: body.username,
+                password: body.password,
+                autoConnect: body.autoConnect !== false,
+              }) });
+            } catch (error) { sendJson(response, 400, { ok: false, error: error instanceof Error ? error.message : 'The connection could not be saved.' }); }
+            return;
+          }
+          if (request.method === 'POST' && url.pathname === '/api/oms/saved/forget') {
+            const body = await readBody(request) as Record<string, unknown>;
+            if (!boundedText(body.id, 300) || !body.id) { sendJson(response, 400, { ok: false, error: 'A saved connection ID is required.' }); return; }
+            sendJson(response, 200, { removed: await forgetOmsCredential(options.root, body.id) });
+            return;
+          }
+          // Signs in using a stored password. The secret is decrypted here and
+          // sent only to the OMS; it never crosses back to the browser.
+          if (request.method === 'POST' && url.pathname === '/api/oms/saved/connect') {
+            const body = await readBody(request) as Record<string, unknown>;
+            if (!boundedText(body.id, 300) || !body.id) { sendJson(response, 400, { ok: false, error: 'A saved connection ID is required.' }); return; }
+            let credential: Awaited<ReturnType<typeof readOmsCredential>>;
+            try { credential = await readOmsCredential(options.root, String(body.id)); }
+            catch { sendJson(response, 409, { ok: false, error: 'The saved password could not be decrypted. Save the connection again.' }); return; }
+            if (!credential) { sendJson(response, 404, { ok: false, error: 'That saved connection no longer exists.' }); return; }
+            if (!options.oms.addConnection) { sendJson(response, 400, { ok: false, error: 'This server cannot add OMS connections.' }); return; }
+            try {
+              const connection = options.oms.addConnection({ instanceName: credential.instanceName });
+              sendJson(response, 200, { connection: await options.oms.login(connection.id, { username: credential.username, password: credential.password }) });
+            } catch (error) { sendOmsError(response, error); }
+            return;
+          }
           if (request.method === 'POST' && url.pathname === '/api/oms/logout') {
             const body = await readBody(request) as Record<string, unknown>;
             if (!validConnectionId(body.connectionId)) { sendJson(response, 400, { ok: false, error: 'A valid connection ID is required.' }); return; }
@@ -221,7 +313,19 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
           if (request.method === 'POST' && url.pathname === '/api/oms/variants/search') {
             const body = await readBody(request);
             if (!validShopRead(body)) { sendJson(response, 400, { ok: false, error: 'A valid connection, shop and bounded search are required.' }); return; }
-            sendJson(response, 200, await options.oms.searchVariants(body.connectionId, body.shopId, { search: body.search ?? '', cursor: body.cursor }));
+            sendJson(response, 200, await options.oms.searchVariants(body.connectionId, body.shopId, { search: body.search ?? '', cursor: body.cursor, locationGid: body.locationGid }));
+            return;
+          }
+          if (request.method === 'POST' && url.pathname === '/api/oms/orders/pos-recent') {
+            const body = await readBody(request);
+            if (!validShopRead(body)) { sendJson(response, 400, { ok: false, error: 'A valid connection and shop are required.' }); return; }
+            sendJson(response, 200, await options.oms.listPosOrders(body.connectionId, body.shopId, { cursor: body.cursor }));
+            return;
+          }
+          if (request.method === 'POST' && url.pathname === '/api/oms/customers/search') {
+            const body = await readBody(request);
+            if (!validShopRead(body)) { sendJson(response, 400, { ok: false, error: 'A valid connection, shop and bounded search are required.' }); return; }
+            sendJson(response, 200, await options.oms.searchCustomers(body.connectionId, body.shopId, { search: body.search ?? '', cursor: body.cursor }));
             return;
           }
           if (request.method === 'POST' && url.pathname === '/api/oms/orders/search') {
@@ -262,10 +366,6 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
         sendJson(response, 200, { profiles: await loadDeviceProfiles(options.root) });
         return;
       }
-      if (request.method === 'GET' && url.pathname === '/api/pos/mutation-readiness') {
-        sendJson(response, 200, await readMutationReadiness(options.root));
-        return;
-      }
       if (request.method === 'POST' && url.pathname === '/api/setup/check') {
         try {
           const body = await readBody(request);
@@ -292,10 +392,16 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
         sendJson(response, 200, { runs: options.coordinator ? await options.coordinator.listRuns() : await createRunStorage(options.root).list() });
         return;
       }
-      const runMatch = url.pathname.match(/^\/api\/runs\/([a-zA-Z0-9_-]+)(?:\/(events|stop|approve))?$/);
+      // Two shapes are matched: the original single-action routes (no further
+      // segments allowed after the action), and `/artifacts` with an optional
+      // `/<name>` segment. Keeping these as separate alternatives, rather than
+      // one shared optional trailing segment, means `/events/whatever` still
+      // fails to match at all instead of silently reusing the `events` route.
+      const runMatch = url.pathname.match(/^\/api\/runs\/([a-zA-Z0-9_-]+)(?:\/(events|stop|progress|logs)|\/(artifacts)(?:\/([^/]+))?)?$/);
       if (runMatch) {
         const runId = runMatch[1];
-        const action = runMatch[2];
+        const action = runMatch[2] ?? runMatch[3];
+        const artifactName = runMatch[4];
         if (action === 'events' && request.method === 'GET') {
           const coordinator = options.coordinator;
           if (!coordinator) { sendJson(response, 503, { ok: false, error: 'Run coordinator is unavailable.' }); return; }
@@ -310,13 +416,77 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
           sendJson(response, 202, { ok: true, requested: true });
           return;
         }
-        if (action === 'approve' && request.method === 'POST') {
-          if (!options.coordinator) { sendJson(response, 503, { ok: false, error: 'Run coordinator is unavailable.' }); return; }
+        if (action === 'progress' && request.method === 'GET') {
+          const file = join(resolve(options.root), '.runtime', 'runs', runId, 'artifacts', 'progress.ndjson');
+          let entries: unknown[] = [];
           try {
-            sendJson(response, 200, { run: await options.coordinator.approveCheckpoint(runId) });
-          } catch (error) {
-            sendJson(response, 409, { ok: false, error: error instanceof Error ? error.message : 'The approval checkpoint could not be granted.' });
-          }
+            entries = (await readFile(file, 'utf8')).split('\n').filter(Boolean).slice(-200).map(line => {
+              try { return JSON.parse(line) as unknown; } catch { return null; }
+            }).filter(Boolean);
+          } catch { /* a run that has not reported yet simply has no progress */ }
+          sendJson(response, 200, { entries });
+          return;
+        }
+        if (action === 'logs' && request.method === 'GET') {
+          const from = Math.max(0, Number(url.searchParams.get('from') ?? '0') || 0);
+          const rawTo = Number(url.searchParams.get('to') ?? '0') || 0;
+          // A window is capped so one expanded step can never stream the whole
+          // multi-megabyte driver log into the browser.
+          const to = rawTo > from ? Math.min(rawTo, from + 400_000) : from + 400_000;
+          const file = join(resolve(options.root), '.runtime', 'runs', runId, 'artifacts', 'wdio-appium.log');
+          let lines: string[] = [];
+          let truncated = false;
+          try {
+            const handle = await open(file, 'r');
+            try {
+              const length = Math.max(0, to - from);
+              const buffer = Buffer.alloc(length);
+              const { bytesRead } = await handle.read(buffer, 0, length, from);
+              const text = buffer.subarray(0, bytesRead).toString('utf8');
+              // Drop the ANSI colouring Appium writes for a terminal.
+              lines = text.split('\n').map(line => line.replace(/\u001b\[[0-9;]*m/g, '')).filter(line => line.trim());
+              truncated = rawTo > from && rawTo - from > 400_000;
+              if (lines.length > 500) { lines = lines.slice(-500); truncated = true; }
+            } finally { await handle.close(); }
+          } catch { /* a run with no driver log simply has no detail */ }
+          sendJson(response, 200, { lines, truncated });
+          return;
+        }
+        if (action === 'artifacts' && !artifactName && request.method === 'GET') {
+          const dir = join(resolve(options.root), '.runtime', 'runs', runId, 'artifacts');
+          const artifacts: RunArtifact[] = [];
+          try {
+            const names = await readdir(dir);
+            for (const name of names) {
+              if (!validArtifactName(name)) continue;
+              try {
+                const info = await lstat(join(dir, name));
+                if (!info.isFile()) continue;
+                artifacts.push({
+                  name,
+                  kind: name.toLowerCase().endsWith('.png') ? 'screenshot' : 'file',
+                  size: info.size,
+                  modifiedAt: info.mtime.toISOString(),
+                });
+              } catch { /* a file that vanished between readdir and stat is simply skipped */ }
+            }
+          } catch { /* a run with no artifacts directory yet simply has none */ }
+          sendJson(response, 200, { artifacts });
+          return;
+        }
+        if (action === 'artifacts' && artifactName && request.method === 'GET') {
+          const dir = join(resolve(options.root), '.runtime', 'runs', runId, 'artifacts');
+          const notFound = () => sendJson(response, 404, { ok: false, error: 'Artifact was not found.' });
+          if (!validArtifactName(artifactName) || !artifactName.toLowerCase().endsWith('.png')) { notFound(); return; }
+          const filePath = resolve(dir, artifactName);
+          // Belt and braces on top of the name check above: the resolved file
+          // must still land inside this run's own artifacts directory.
+          if (filePath !== dir && !filePath.startsWith(`${dir}${sep}`)) { notFound(); return; }
+          try {
+            const info = await lstat(filePath);
+            if (!info.isFile()) { notFound(); return; }
+            sendPng(response, await readFile(filePath));
+          } catch { notFound(); }
           return;
         }
         if (!action && request.method === 'GET') {

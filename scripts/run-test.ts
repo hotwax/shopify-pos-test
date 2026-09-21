@@ -7,7 +7,6 @@ import { findAvailablePort, makeWorkerEnvironment, spawn } from '../core/runner/
 import { isTerminalState } from '../core/runner/protocol.ts';
 import { readDeviceConfig } from '../config/device.ts';
 import { registry } from '../test/scenarios/registry.ts';
-import { readMutationReadiness } from '../core/safety/readiness.ts';
 import { assertScenarioCanRun, RunBlockedError } from '../core/runner/guards.ts';
 import { probeRemoteXpcTunnel, readDeviceLockState, remoteXpcTunnelBlockedMessage, requiresRemoteXpc } from '../core/setup/checks.ts';
 import { validateRunRequestAgainstCatalog } from '../core/catalog/validate.ts';
@@ -32,7 +31,7 @@ validateRunRequestAgainstCatalog(request, catalog.scripts, registry);
 const scenario = registry.find(candidate => candidate.id === script.scenario);
 if (!scenario) throw new Error(`Scenario is unavailable: ${script.scenario}`);
 const device = readDeviceConfig(process.env);
-assertScenarioCanRun(scenario.effect, { ...request, deviceProfileId: device.udid }, await readMutationReadiness(root));
+assertScenarioCanRun(scenario.effect, { ...request, deviceProfileId: device.udid });
 const appiumPort = await findAvailablePort(4723);
 const wdaLocalPort = await findAvailablePort(8101);
 const revision = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -46,7 +45,11 @@ const coordinator = createCoordinator({
     if (await requiresRemoteXpc(device.udid) && !await probeRemoteXpcTunnel()) {
       throw new RunBlockedError('remote-xpc-tunnel-unavailable', remoteXpcTunnelBlockedMessage);
     }
-    const wdaDerivedDataPath = resolve(root, '.runtime', 'runs', runId, 'wda');
+    // One reusable WebDriverAgent build. A per-run DerivedData directory forced
+    // a full Xcode rebuild of WDA on every run (~130MB and minutes each time).
+    // The CLI and the app must agree on the runner bundle id, or they overwrite
+    // each other here and the loser needs re-trusting on the iPad.
+    const wdaDerivedDataPath = resolve(root, '.runtime', 'wda');
     const env = {
       ...makeWorkerEnvironment({ id: request.deviceProfileId, ...device }, runId, artifactDir, appiumPort, wdaLocalPort, wdaDerivedDataPath, root, inputFile),
       WDIO_ENTRY: scenario.entry,

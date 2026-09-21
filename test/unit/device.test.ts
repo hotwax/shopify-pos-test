@@ -55,7 +55,13 @@ test('rejects capability changes that could reset POS or replace the WDA session
   assert.throws(() => assertNativeSessionPreservesAccess({ ...caps, 'appium:app': '/tmp/unknown.app' }), /safety invariant/);
 });
 
-test('captures the deep native POS order hierarchy', () => {
+test('captures the deep native POS order hierarchy and looks elements up by first match', () => {
   const caps: Record<string, unknown> = buildCapabilities(readDeviceConfig(valid));
-  assert.deepEqual(caps['appium:settings'], { snapshotMaxDepth: 62 });
+  assert.deepEqual(caps['appium:settings'], { snapshotMaxDepth: 62, useFirstMatch: true });
+});
+
+test('bounds the idle wait in seconds, never disabling it', () => {
+  const caps: Record<string, unknown> = buildCapabilities(readDeviceConfig(valid));
+  // The capability is in seconds; 1500 once meant "wait up to 25 minutes".
+  assert.equal(caps['appium:waitForIdleTimeout'], 2);
 });

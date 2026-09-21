@@ -1,5 +1,5 @@
 import { execFileSync, spawn as spawnProcess, type ChildProcess } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, open as openFile, writeFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import { isAbsolute, join } from 'node:path';
 import { browser } from '@wdio/globals';
@@ -11,6 +11,12 @@ export interface OwnedProcess {
   child: ChildProcess;
   isAlive(): boolean;
   terminate(timeoutMs?: number): Promise<void>;
+  /**
+   * Runs once after the process has exited and before the coordinator reads
+   * the run's artifacts. A worker that shares the host's Appium server uses it
+   * to copy its own byte range of the shared log into the run's artifact log.
+   */
+  collectArtifacts?(): Promise<void>;
 }
 
 export async function findAvailablePort(preferred: number): Promise<number> {
@@ -112,6 +118,25 @@ export function spawn(executable: string, args: string[], options: { cwd: string
   };
 }
 
+/**
+ * Copies `source[offset..]` into `target`. The shared Appium log is one file
+ * for the host's lifetime; a run's slice starts at the size the file had when
+ * the worker was spawned. Bounded, so a runaway log cannot fill the artifacts.
+ */
+export async function copyFileTail(source: string, offset: number, target: string, maximumBytes = 64 * 1024 * 1024): Promise<number> {
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('The log offset must be a non-negative integer.');
+  let handle;
+  try { handle = await openFile(source, 'r'); } catch { await writeFile(target, ''); return 0; }
+  try {
+    const size = (await handle.stat()).size;
+    const length = Math.max(0, Math.min(size - offset, maximumBytes));
+    const buffer = Buffer.alloc(length);
+    if (length > 0) await handle.read(buffer, 0, length, offset);
+    await writeFile(target, buffer);
+    return length;
+  } finally { await handle.close(); }
+}
+
 export function makeWorkerEnvironment(device: DeviceProfile, runId: string, artifactDir: string, port: number, wdaLocalPort: number, wdaDerivedDataPath: string, testingRoot = process.cwd(), workerInputFile?: string): Record<string, string> {
   if (!isAbsolute(artifactDir)) throw new Error('Artifact directory must be absolute.');
   if (!isAbsolute(wdaDerivedDataPath)) throw new Error('WDA DerivedData path must be absolute.');
@@ -132,7 +157,26 @@ export function makeWorkerEnvironment(device: DeviceProfile, runId: string, arti
   };
 }
 
-export function makeWdioConfig(input: { runId: string; device: DeviceProfile; entry: string; artifactDir: string; port: number; wdaLocalPort: number; wdaDerivedDataPath: string }): WebdriverIO.Config {
+export interface WdioConfigInput {
+  runId: string;
+  device: DeviceProfile;
+  entry: string;
+  artifactDir: string;
+  port: number;
+  wdaLocalPort: number;
+  wdaDerivedDataPath: string;
+  /** True when the host already runs an Appium server on `port`; the worker must not start its own. */
+  sharedAppium?: boolean;
+  /**
+   * Runs once after the spec, with the device session still open. Used to
+   * leave POS on Home with an empty cart after a mutation run, pass or fail,
+   * so the next run starts from the same state. Its outcome is recorded in
+   * reset.json and never changes the run's result.
+   */
+  afterSpec?: () => Promise<void>;
+}
+
+export function makeWdioConfig(input: WdioConfigInput): WebdriverIO.Config {
   const capabilities = buildCapabilities({
     udid: input.device.udid,
     teamId: input.device.teamId,
@@ -147,7 +191,10 @@ export function makeWdioConfig(input: { runId: string; device: DeviceProfile; en
     maxInstances: 1,
     capabilities: [{ ...capabilities, 'appium:derivedDataPath': input.wdaDerivedDataPath, 'appium:wdaLocalPort': input.wdaLocalPort }],
     framework: 'mocha',
-    mochaOpts: { timeout: 120_000 },
+    // A native POS scenario spends real time waiting on the device. At 120s a
+    // slow-but-healthy run was being killed mid-step and reported as "worker
+    // exited without a structured result", which hid the actual failure.
+    mochaOpts: { timeout: 420_000 },
     waitforTimeout: 20_000,
     connectionRetryTimeout: 240_000,
     connectionRetryCount: 0,
@@ -162,6 +209,17 @@ export function makeWdioConfig(input: { runId: string; device: DeviceProfile; en
       }
       await writeFile(join(input.artifactDir, 'result.json'), JSON.stringify({ passed, message: error?.message?.slice(0, 500) ?? null }));
     },
-    services: [['appium', { args: { address: '127.0.0.1', port: input.port, logLevel: 'info' }, logPath: input.artifactDir }]],
+    after: async function () {
+      if (!input.afterSpec) return;
+      const startedAt = Date.now();
+      let outcome: { ok: boolean; message: string | null } = { ok: true, message: null };
+      try { await input.afterSpec(); }
+      catch (cause) { outcome = { ok: false, message: (cause instanceof Error ? cause.message : String(cause)).slice(0, 500) }; }
+      try {
+        await mkdir(input.artifactDir, { recursive: true });
+        await writeFile(join(input.artifactDir, 'reset.json'), JSON.stringify({ ...outcome, durationMs: Date.now() - startedAt }));
+      } catch { /* the reset record is evidence, never the verdict */ }
+    },
+    ...(input.sharedAppium ? {} : { services: [['appium', { args: { address: '127.0.0.1', port: input.port, logLevel: 'info' }, logPath: input.artifactDir }]] }),
   };
 }

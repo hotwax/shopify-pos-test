@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.inspect-cash-tender",
+  "name": "Inspect cash tender surface",
+  "description": "Discovery only. Starting from the payment selection surface, opens the observed Cash tender surface and captures it. It never confirms a payment and creates no order.",
+  "domain": "shopify-pos",
+  "scenario": "pos.inspect-cash-tender",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["diagnostic", "cash", "discovery"]
+}

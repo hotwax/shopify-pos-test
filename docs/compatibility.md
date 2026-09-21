@@ -21,7 +21,7 @@ Updated: 2026-09-20.
 | POS active shop/location identity | Location `Brooklyn` read from POS Settings and correlated to one working-OMS mapping; native Shopify shop GID not independently read | Mutation gate remains blocked until native shop identity and approved target policy are proven |
 | Cart precondition | Current native cart surface was visible, but empty-cart state was not proven; checkout was absent and Add to cart was disabled | Diagnostic failed closed with `effect: not-started`; no cart repair or mutation was attempted |
 | Returns/exchanges | First observed order showed a disabled Return or exchange action; no completed mutation performed | Native mutation screens/selectors and real-device proof remain unavailable; GUI stays fail-closed |
-| Transaction policy | Explicit `testOnly` target loader, exact-ID validation, cash-only direction checks, durable approval checkpoint, coordinator acknowledgement before commit, sanitized worker inputs, runner mutation guards and confirmed/unknown effect states are unit-tested | Safety foundation exists; it is not evidence that a live target is approved |
+| Transaction policy | Explicit `testOnly` target loader, exact-ID validation, cash-only direction checks, coordinator acknowledgement before commit, sanitized worker inputs, runner mutation guards and confirmed/unknown effect states are unit-tested | Safety foundation exists; it is not evidence that a live target is approved |
 | POS Pro and staff permissions | Not fully characterized | Exchange capability gate remains open |
 
 ## Scope rules

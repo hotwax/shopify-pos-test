@@ -1,0 +1,87 @@
+/*
+ * Cross-page primitives.
+ *
+ * These eight classes were previously copy-pasted into per-page `<style scoped>`
+ * blocks, which is the only way to share anything when every block is scoped.
+ * That left `lede` with four different definitions and `button-row` with four,
+ * so the same class name meant something different on each page. They live here
+ * so there is exactly one definition of each.
+ *
+ * A page that genuinely needs a different value overrides the specific
+ * declaration in its own scoped block -- scoped rules carry an extra attribute
+ * selector, so they win without !important. Keep those overrides to the one
+ * declaration that differs; anything else belongs here.
+ */
+
+/* Intro paragraph at the top of a page. No font-size: sizing is left to the
+   page, so a denser page is not forced to a lede-sized first paragraph. */
+.lede {
+  max-width: 760px;
+  line-height: 1.5;
+}
+
+/* Horizontal run of buttons under a card or form. */
+.button-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-top: 1rem;
+}
+
+/* Card title on the left, status/actions on the right. */
+.card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* Responsive read-only key/value grid. Ionic's grid is row/column only, so
+   this cannot be expressed with ion-grid. */
+.fact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: .75rem 1.25rem;
+}
+
+.fact-grid p {
+  margin: .15rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+/* Secondary line inside a fact cell. */
+.fact-sub {
+  display: block;
+}
+
+/* A checklist row whose icon and badge must align to the first line of a
+   wrapping label rather than to its vertical centre. --align-items is an Ionic
+   custom property, so a class is the only way to reach it. */
+ion-item.check-item {
+  --align-items: flex-start;
+}
+
+ion-item.check-item ion-icon[slot="start"] {
+  align-self: flex-start;
+  margin-top: 14px;
+}
+
+ion-item.check-item ion-badge[slot="end"] {
+  align-self: flex-start;
+  margin-top: 10px;
+}
+
+/* Compact, transparent row used to preview generated content. */
+.preview-item {
+  margin-bottom: 0.5rem;
+  --background: transparent;
+  font-size: 0.85rem;
+}
+
+/* Stacked label inside a radio/selection row. */
+.choice-label {
+  display: flex;
+  flex-direction: column;
+}

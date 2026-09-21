@@ -4,10 +4,10 @@ import { readReturnEligibility } from '../../core/verification/return-eligibilit
 import type { OmsShopifyOrderDetail } from '../../shared/contracts.ts';
 
 const order: OmsShopifyOrderDetail = {
-  gid: 'gid://shopify/Order/1', legacyResourceId: '1', name: '#1', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '10.00', currency: 'USD' }, paymentGatewayNames: ['cash'], transactions: [], agreements: [], nextCursor: null,
+  gid: 'gid://shopify/Order/1', legacyResourceId: '1', name: '#1', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '10.00', currency: 'USD' }, paymentGatewayNames: ['cash'], customer: null, transactions: [], agreements: [], nextCursor: null,
   lines: [
-    { gid: 'gid://shopify/LineItem/1', quantity: 2, refundableQuantity: 1, unitPrice: { amount: '5.00', currency: 'USD' }, variantGid: 'gid://shopify/ProductVariant/1', variantTitle: 'Blue', sku: 'BLUE', productGid: 'gid://shopify/Product/1', productTitle: 'Shirt' },
-    { gid: 'gid://shopify/LineItem/2', quantity: 1, refundableQuantity: 0, unitPrice: { amount: '5.00', currency: 'USD' }, variantGid: 'gid://shopify/ProductVariant/2', variantTitle: 'Red', sku: 'RED', productGid: 'gid://shopify/Product/2', productTitle: 'Shirt' },
+    { gid: 'gid://shopify/LineItem/1', quantity: 2, refundableQuantity: 1, unitPrice: { amount: '5.00', currency: 'USD' }, variantGid: 'gid://shopify/ProductVariant/1', variantTitle: 'Blue', sku: 'BLUE', productGid: 'gid://shopify/Product/1', productTitle: 'Shirt', hasOnlyDefaultVariant: null, productVariantCount: null },
+    { gid: 'gid://shopify/LineItem/2', quantity: 1, refundableQuantity: 0, unitPrice: { amount: '5.00', currency: 'USD' }, variantGid: 'gid://shopify/ProductVariant/2', variantTitle: 'Red', sku: 'RED', productGid: 'gid://shopify/Product/2', productTitle: 'Shirt', hasOnlyDefaultVariant: null, productVariantCount: null },
   ],
 };
 

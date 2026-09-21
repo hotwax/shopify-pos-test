@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.clear-cart",
+  "name": "Clear the POS cart",
+  "description": "Backs out of any open cash, payment, more-actions or custom-sale surface and clears an unsold cart. It completes no payment and creates no business data.",
+  "domain": "shopify-pos",
+  "scenario": "pos.clear-cart",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["utility", "cart", "cleanup"]
+}

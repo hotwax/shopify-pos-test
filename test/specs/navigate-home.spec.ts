@@ -36,6 +36,26 @@ describe('Shopify POS Home navigation utility', () => {
         timeoutMsg: 'Shopify POS did not close the read-only Search surface.',
       });
     }
+    // A discovery run can leave the custom sale modal open, which covers the tab
+    // bar. Cancel is the observed dismissal and adds nothing to the cart.
+    let closedCustomSale = false;
+    if (await browser.$(s.customSaleScreen).isDisplayed()) {
+      const cancel = await browser.$(s.customSaleCancelButton).getElement();
+      if (await cancel.getAttribute('label') !== 'Cancel') {
+        throw new Error('The custom sale action bar did not expose the observed Cancel action; inspect the current build before changing selectors.');
+      }
+      if (!await cancel.isDisplayed() || !await cancel.isEnabled() || await cancel.getAttribute('hittable') !== 'true') {
+        throw new Error('The observed custom sale Cancel action is unavailable.');
+      }
+      await cancel.click();
+      closedCustomSale = true;
+      await browser.waitUntil(async () => !await browser.$(s.customSaleScreen).isDisplayed(), {
+        timeout: 20_000,
+        timeoutMsg: 'Shopify POS did not close the custom sale surface after Cancel.',
+      });
+    }
+    void closedCustomSale;
+
     if (await browser.$(s.detailScreen).isDisplayed() || !await homeTab.isDisplayed()) {
       const close = await browser.$(s.detailCloseButton).getElement();
       if (!await close.isDisplayed() || !await close.isEnabled() || await close.getAttribute('hittable') !== 'true') {

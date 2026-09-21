@@ -5,6 +5,8 @@ export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Res
 interface Session {
   token: string;
   userId: string;
+  username?: string;
+  userFullName?: string;
   expiresAt: string;
 }
 
@@ -43,7 +45,7 @@ export class OmsSessionStore {
 
   constructor(private readonly fetchImpl: FetchLike = fetch) {}
 
-  async login(connection: OmsConnectionConfig, credentials: { username: string; password: string }): Promise<{ userId: string; expiresAt: string }> {
+  async login(connection: OmsConnectionConfig, credentials: { username: string; password: string }): Promise<{ userId: string; username?: string; userFullName?: string; expiresAt: string }> {
     if (!credentials.username.trim() || !credentials.password) throw new OmsError('authentication', 'Username and password are required.');
     const options = await request(connection.origin, '/rest/s1/admin/checkLoginOptions', { method: 'GET', headers: { Accept: 'application/json' } }, this.fetchImpl);
     if (!options.response.ok) throw new OmsError(classifyStatus(options.response.status), 'The OMS login options could not be read.', options.response.status);
@@ -63,8 +65,12 @@ export class OmsSessionStore {
     if (!profile.response.ok) throw new OmsError(classifyStatus(profile.response.status), 'The OMS user profile could not be read.', profile.response.status);
     const userId = String(profile.body.userId ?? profile.body.user?.userId ?? profile.body.user?.id ?? profile.body.username ?? '');
     if (!userId) throw new OmsError('authentication', 'The OMS profile did not identify the authenticated user.');
-    this.sessions.set(connection.id, { token, userId, expiresAt });
-    return { userId, expiresAt };
+    // The profile's userId is the OMS party identifier; the login name is a
+    // separate field, so the UI can show the account the teammate typed.
+    const username = String(profile.body.username ?? profile.body.user?.username ?? profile.body.userLoginId ?? profile.body.user?.userLoginId ?? '').trim() || undefined;
+    const userFullName = String(profile.body.userFullName ?? profile.body.user?.userFullName ?? '').trim() || undefined;
+    this.sessions.set(connection.id, { token, userId, username, userFullName, expiresAt });
+    return { userId, username, userFullName, expiresAt };
   }
 
   async logout(connection: OmsConnectionConfig): Promise<void> {
@@ -76,14 +82,14 @@ export class OmsSessionStore {
     } catch { /* local logout still clears the in-memory session */ }
   }
 
-  status(connectionId: string): { state: 'configured' | 'connected' | 'expired'; userId?: string; expiresAt?: string } {
+  status(connectionId: string): { state: 'configured' | 'connected' | 'expired'; userId?: string; username?: string; userFullName?: string; expiresAt?: string } {
     const session = this.sessions.get(connectionId);
     if (!session) return { state: 'configured' };
     if (Date.parse(session.expiresAt) <= Date.now()) {
       this.sessions.delete(connectionId);
       return { state: 'expired', expiresAt: session.expiresAt };
     }
-    return { state: 'connected', userId: session.userId, expiresAt: session.expiresAt };
+    return { state: 'connected', userId: session.userId, username: session.username, userFullName: session.userFullName, expiresAt: session.expiresAt };
   }
 
   clear(connectionId: string): void {

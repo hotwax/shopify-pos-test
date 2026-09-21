@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.inspect-custom-sale",
+  "name": "Inspect custom sale surface",
+  "description": "From Shopify POS Home with an empty cart, open the observed Add custom sale tile and capture its native accessibility tree without entering an amount or adding a line.",
+  "domain": "shopify-pos",
+  "scenario": "pos.inspect-custom-sale",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["diagnostic", "read-only", "custom-sale"]
+}

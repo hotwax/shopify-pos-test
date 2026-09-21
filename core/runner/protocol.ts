@@ -1,14 +1,14 @@
 import { Ajv2020, type ValidateFunction } from 'ajv/dist/2020.js';
 import * as formatsModule from 'ajv-formats';
 import schema from '../../shared/run-event.schema.json' with { type: 'json' };
-import type { PendingApproval, RunEvent, RunRecord, RunRequest } from '../../shared/contracts.ts';
+import type { RunEvent, RunRecord, RunRequest } from '../../shared/contracts.ts';
 
 const addFormats = (formatsModule as unknown as { default: (instance: object) => object }).default;
 const ajv = new Ajv2020({ allErrors: true, strict: true });
 addFormats(ajv);
 const validateSchema = ajv.compile(schema);
 const validStates = new Set<RunRecord['state']>([
-  'validating', 'preparing', 'running', 'awaiting-approval', 'verifying',
+  'validating', 'preparing', 'running', 'verifying',
   'passed', 'failed', 'blocked', 'cancelled', 'interrupted', 'needs-reconciliation',
 ]);
 const validEffects = new Set<RunRecord['effect']>(['not-started', 'attempted', 'confirmed', 'unknown']);
@@ -23,32 +23,6 @@ function payloadIsBounded(value: unknown): boolean {
   } catch {
     return false;
   }
-}
-
-function pendingApproval(data: Record<string, unknown>): PendingApproval {
-  const summary = data.summary;
-  if (!/^[a-f0-9]{64}$/.test(String(data.intentHash)) || typeof data.requestedAt !== 'string' || !Number.isFinite(Date.parse(data.requestedAt)) ||
-      !summary || typeof summary !== 'object') throw new Error('Invalid approval-required event.');
-  const value = summary as Record<string, unknown>;
-  const amount = value.amount;
-  if (!/^[a-zA-Z0-9._-]{1,120}$/.test(String(value.scenario)) || !['collect', 'even', 'refund'].includes(String(value.direction)) ||
-      !amount || typeof amount !== 'object' || !/^\d+(?:\.\d{1,2})?$/.test(String((amount as Record<string, unknown>).amount)) ||
-      !/^[A-Z]{3}$/.test(String((amount as Record<string, unknown>).currency)) ||
-      !Number.isSafeInteger(value.lineCount) || Number(value.lineCount) < 1 || Number(value.lineCount) > 1000 ||
-      (value.sourceOrderGid !== undefined && !/^gid:\/\/shopify\/Order\/[A-Za-z0-9_-]+$/.test(String(value.sourceOrderGid)))) {
-    throw new Error('Invalid approval-required event summary.');
-  }
-  return {
-    intentHash: String(data.intentHash),
-    requestedAt: data.requestedAt,
-    summary: {
-      scenario: String(value.scenario),
-      direction: value.direction as 'collect' | 'even' | 'refund',
-      amount: { amount: String((amount as Record<string, unknown>).amount), currency: String((amount as Record<string, unknown>).currency) },
-      lineCount: Number(value.lineCount),
-      ...(value.sourceOrderGid === undefined ? {} : { sourceOrderGid: String(value.sourceOrderGid) }),
-    },
-  };
 }
 
 export function validateRunEvent(input: unknown): RunEvent {
@@ -98,7 +72,6 @@ export function applyRunEvent(record: RunRecord, input: RunEvent): RunRecord {
       throw new Error('Invalid run status message.');
     }
     if (typeof event.data.message === 'string') next.statusMessage = event.data.message;
-    if (event.data.clearApproval === true) delete next.pendingApproval;
     if (state === 'interrupted' || state === 'cancelled') {
       if (next.effect === 'attempted' || next.effect === 'unknown') {
         next.state = 'needs-reconciliation';
@@ -123,9 +96,6 @@ export function applyRunEvent(record: RunRecord, input: RunEvent): RunRecord {
       throw new Error('Invalid assertion event.');
     }
     next.assertions.push({ lane: lane as 'pos' | 'shopify' | 'oms', status, message });
-  } else if (event.type === 'approval-required') {
-    next.pendingApproval = pendingApproval(event.data);
-    next.state = 'awaiting-approval';
   } else if (event.type === 'artifact') {
     const kind = event.data.kind;
     const path = event.data.path;

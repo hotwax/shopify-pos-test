@@ -2,13 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { OmsShopifyOrderDetail, RunEvent, RunRecord, RunRequest } from '../../shared/contracts.ts';
+import type { Money, OmsShopifyOrderDetail, RunEvent, RunRecord, RunRequest } from '../../shared/contracts.ts';
 import { createArtifactDirectory } from '../storage/artifacts.ts';
 import { createRunStorage, type RunStorage } from '../storage/runs.ts';
 import { acquireDeviceRunLock, type DeviceRunLock } from './lock.ts';
 import { isTerminalState, applyRunEvent, createInitialRunRecord } from './protocol.ts';
 import type { OwnedProcess } from './process.ts';
-import { approveCheckpoint as writeApproval, clearApprovalRequest, readApprovalRequest, type ApprovalRequest } from './approval.ts';
 import { acknowledgeCommitAttempt, acknowledgeCommitOutcome, clearCommitAttempt, clearCommitOutcome, readCommitAttempt, readCommitOutcome, type CommitAttemptRequest, type CommitOutcomeRequest } from './effects.ts';
 import { clearBridgeRequest, readBridgeRequests, writeBridgeResponse } from './bridge.ts';
 import { writeWorkerInput } from './input.ts';
@@ -61,14 +60,14 @@ export async function classifyWorkerFailure(artifactDir: string): Promise<Worker
       message: 'Apple UI automation authorization is unavailable. Complete the Apple-owned authorization yourself, then start a fresh run. The toolkit did not change that setting.',
     };
   }
-  if (/Developer App Certificate is not trusted|certificate.*not trusted/i.test(log)) {
+  if (/Developer App Certificate is not trusted|certificate.*not trusted|not been explicitly trusted|Untrusted Developer/i.test(log)) {
     return {
       state: 'blocked',
       reason: 'developer-certificate-not-trusted',
-      message: 'The WDA developer certificate is not trusted on the iPad. Complete Apple’s trust step yourself, then start a fresh run. The toolkit did not change trust settings.',
+      message: 'The WDA developer certificate is not trusted on the iPad. On the iPad, open Settings → General → VPN & Device Management, trust your development profile, then retry this test.',
     };
   }
-  if (/Tunnel registry port not found|RemoteXPC.*(?:not available|unavailable)|RemoteXPC upstream connect error/i.test(log)) {
+  if (/Tunnel registry port not found|RemoteXPC.*(?:listing unavailable|not available|unavailable)|Tunnel registry.*unavailable/i.test(log)) {
     return {
       state: 'blocked',
       reason: 'remote-xpc-tunnel-unavailable',
@@ -90,17 +89,6 @@ function stateEvent(record: RunRecord, state: RunRecord['state'], data: Record<s
     at: new Date().toISOString(),
     type: 'run-state',
     data: { ...data, state },
-  };
-}
-
-function approvalEvent(record: RunRecord, request: ApprovalRequest): RunEvent {
-  return {
-    protocolVersion: 1,
-    runId: record.id,
-    sequence: record.lastSequence + 1,
-    at: new Date().toISOString(),
-    type: 'approval-required',
-    data: { intentHash: request.intentHash, requestedAt: request.requestedAt, summary: request.summary },
   };
 }
 
@@ -143,6 +131,7 @@ export interface CoordinatorOptions {
   workerFactory?: WorkerFactory;
   currentRevision?: () => string | undefined;
   resolveObservedOrder?: (input: { request: RunRequest; observedName: string; runMarker?: string }) => Promise<{ orderGid: string; orderName: string }>;
+  resolveRecentOrder?: (input: { request: RunRequest; notBefore: string; total: Money; lineCount: number }) => Promise<{ orderGid: string; orderName: string }>;
   readShopifyOrder?: (input: { request: RunRequest; orderGid: string }) => Promise<OmsShopifyOrderDetail>;
 }
 
@@ -152,6 +141,7 @@ export class RunCoordinator {
   private readonly workerFactory?: WorkerFactory;
   private readonly currentRevision: () => string | undefined;
   private readonly resolveObservedOrder?: CoordinatorOptions['resolveObservedOrder'];
+  private readonly resolveRecentOrder?: CoordinatorOptions['resolveRecentOrder'];
   private readonly readShopifyOrder?: CoordinatorOptions['readShopifyOrder'];
   private readonly active = new Map<string, ActiveRun>();
   private readonly listeners = new Map<string, Set<(event: RunEvent) => void>>();
@@ -162,6 +152,7 @@ export class RunCoordinator {
     this.storage = options.storage ?? createRunStorage(this.root);
     this.workerFactory = options.workerFactory;
     this.resolveObservedOrder = options.resolveObservedOrder;
+    this.resolveRecentOrder = options.resolveRecentOrder;
     this.readShopifyOrder = options.readShopifyOrder;
     this.currentRevision = options.currentRevision ?? (() => {
       try { return execFileSync('git', ['-C', this.root, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || undefined; }
@@ -222,23 +213,11 @@ export class RunCoordinator {
     if (active) {
       active.stopping = true;
       await active.process?.terminate();
+      await active.process?.collectArtifacts?.().catch(() => undefined);
     }
     const current = await this.read(runId);
     if (!isTerminalState(current.state)) await this.append(current, stateEvent(current, 'cancelled', { reason: 'stop-requested' }));
     await this.finish(runId);
-  }
-
-  async approveCheckpoint(runId: string): Promise<RunRecord> {
-    let current: RunRecord;
-    try { current = await this.read(runId); }
-    catch { throw new Error('Run was not found.'); }
-    if (isTerminalState(current.state)) throw new Error('A terminal run cannot be approved.');
-    if (current.state !== 'awaiting-approval' || !current.pendingApproval) throw new Error('This run has no pending approval checkpoint.');
-    await writeApproval(this.root, runId, current.pendingApproval.intentHash);
-    return this.append(current, stateEvent(current, 'running', {
-      clearApproval: true,
-      message: 'Approval granted. The worker may continue to the reviewed transaction checkpoint.',
-    }));
   }
 
   async getRun(runId: string): Promise<RunRecord> { return this.read(runId); }
@@ -265,14 +244,6 @@ export class RunCoordinator {
       if (polling) return;
       polling = true;
       try {
-        const requested = await readApprovalRequest(this.root, running.id);
-        if (requested) {
-          const current = await this.read(running.id);
-          if (!isTerminalState(current.state) && current.pendingApproval?.intentHash !== requested.intentHash) {
-            await this.append(current, approvalEvent(current, requested));
-            await clearApprovalRequest(this.root, running.id);
-          }
-        }
         const commit = await readCommitAttempt(this.root, running.id);
         if (commit) {
           const current = await this.read(running.id);
@@ -316,6 +287,15 @@ export class RunCoordinator {
             catch (cause) { error = this.safeError(cause); }
           }
           await writeBridgeResponse(this.root, request, result ? { ok: true, orderGid: result.orderGid, orderName: result.orderName } : { ok: false, error: error ?? 'The observed POS order could not be resolved.' });
+        } else if (request.operation === 'resolveRecentOrder') {
+          let result: { orderGid: string; orderName: string } | undefined;
+          let error: string | undefined;
+          if (!this.resolveRecentOrder) error = 'Recent-order correlation is not configured for this local host.';
+          else {
+            try { result = await this.resolveRecentOrder({ request: running.request, notBefore: request.notBefore, total: { amount: request.totalAmount, currency: request.totalCurrency }, lineCount: request.lineCount }); }
+            catch (cause) { error = this.safeError(cause); }
+          }
+          await writeBridgeResponse(this.root, request, result ? { ok: true, orderGid: result.orderGid, orderName: result.orderName } : { ok: false, error: error ?? 'The sale could not be correlated to one POS order.' });
         } else {
           let result: OmsShopifyOrderDetail | undefined;
           let error: string | undefined;
@@ -329,7 +309,7 @@ export class RunCoordinator {
         await clearBridgeRequest(this.root, request);
       } finally { bridgePolling = false; }
     };
-    const approvalTimer = setInterval(() => {
+    const requestTimer = setInterval(() => {
       void pollRequests().catch(() => undefined);
       void pollBridge().catch(() => undefined);
     }, 100);
@@ -341,8 +321,10 @@ export class RunCoordinator {
       if (active.stopping) await active.process.terminate();
       await this.waitForWorker(active);
     } finally {
-      clearInterval(approvalTimer);
+      clearInterval(requestTimer);
     }
+    // The run's artifact log must be complete before it is classified or read.
+    await active.process?.collectArtifacts?.().catch(() => undefined);
     const current = await this.read(running.id);
     if (isTerminalState(current.state)) { await this.finish(running.id); return; }
     let result: { passed: boolean; message?: string } | undefined;

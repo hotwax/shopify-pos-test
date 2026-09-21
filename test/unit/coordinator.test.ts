@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { classifyWorkerFailure, createCoordinator } from '../../core/runner/coordinator.ts';
-import { requestApproval } from '../../core/runner/approval.ts';
 import { consumeCommitAcknowledgement, consumeCommitOutcomeAcknowledgement, requestCommitAttempt, requestCommitOutcome } from '../../core/runner/effects.ts';
 import { spawn } from '../../core/runner/process.ts';
 import { isTerminalState } from '../../core/runner/protocol.ts';
@@ -70,13 +69,22 @@ test('classifies UI-automation authorization as a user-owned blocked preconditio
   assert.equal(result.reason, 'ui-automation-authorization');
 });
 
+test('classifies an untrusted developer profile on iPad as a blocked precondition', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'ios-testing-wda-'));
+  await writeFile(join(directory, 'wdio-appium.log'), 'Unable to launch co.hotwax.iosTesting.WDARunner.xctrunner because it has an invalid code signature, inadequate entitlements or its profile has not been explicitly trusted by the user.');
+  const result = await classifyWorkerFailure(directory);
+  assert.equal(result.state, 'blocked');
+  assert.equal(result.reason, 'developer-certificate-not-trusted');
+  assert.match(result.message, /Settings → General → VPN & Device Management/);
+});
+
 test('classifies a missing RemoteXPC tunnel as a blocked host precondition', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'ios-testing-wda-'));
   await writeFile(join(directory, 'wdio-appium.log'), 'RemoteXPC devices listing unavailable: Tunnel registry port not found. Please run the tunnel creation script first');
   assert.deepEqual(await classifyWorkerFailure(directory), {
     state: 'blocked',
     reason: 'remote-xpc-tunnel-unavailable',
-    message: 'The iOS RemoteXPC tunnel is not running. Start it from a separate Terminal with `sudo appium driver run xcuitest tunnel-creation`, then start a fresh native run. The toolkit did not change iPad access settings.',
+    message: 'The iOS RemoteXPC tunnel is not running. Start it from a separate Terminal with `sudo env "PATH=$PATH" npx --no-install appium driver run xcuitest tunnel-creation`, then start a fresh native run. The toolkit did not change iPad access settings.',
   });
 });
 
@@ -130,28 +138,6 @@ test('blocks a run when the reviewed source revision is no longer current', asyn
   assert.equal(result.effect, 'not-started');
   assert.equal(workerStarted, false);
   assert.match(result.statusMessage ?? '', /revision/i);
-});
-
-test('surfaces a worker approval request and resumes only after the coordinator approves it', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-'));
-  const intentHash = 'b'.repeat(64);
-  const coordinator = createCoordinator({
-    root,
-    workerFactory: async ({ runId, artifactDir }) => {
-      await requestApproval(root, runId, intentHash, { scenario: 'create-cash-order', direction: 'collect', amount: { amount: '12.00', currency: 'USD' }, lineCount: 1 });
-      await writeFile(join(artifactDir, 'result.json'), JSON.stringify({ passed: true, message: 'approved' }));
-      return spawn(process.execPath, ['-e', 'setTimeout(() => {}, 500)'], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? '' } });
-    },
-  });
-  const accepted = await coordinator.startRun(request);
-  await eventually(async () => (await coordinator.getRun(accepted.id)).state === 'awaiting-approval');
-  const waiting = await coordinator.getRun(accepted.id);
-  assert.equal(waiting.pendingApproval?.intentHash, intentHash);
-  await coordinator.approveCheckpoint(accepted.id);
-  await eventually(async () => (await coordinator.getRun(accepted.id)).state === 'passed');
-  const finished = await coordinator.getRun(accepted.id);
-  assert.equal(finished.pendingApproval, undefined);
-  assert.equal(finished.effect, 'not-started');
 });
 
 test('does not report a passed run when a commit attempt lacks confirmed read-back', async () => {
@@ -236,7 +222,7 @@ test('routes observed-order correlation through the owned coordinator bridge', a
 test('routes Shopify order readback through the owned coordinator bridge', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-order-'));
   let receivedContext = false;
-  const detail = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], transactions: [], agreements: [], lines: [], nextCursor: null };
+  const detail = { gid: 'gid://shopify/Order/42', legacyResourceId: '42', name: '#42', financialStatus: 'PAID', fulfillmentStatus: 'UNFULFILLED', total: { amount: '12.00', currency: 'USD' }, paymentGatewayNames: ['cash'], customer: null, transactions: [], agreements: [], lines: [], nextCursor: null };
   const coordinator = createCoordinator({
     root,
     readShopifyOrder: async ({ request: workerRequest, orderGid }) => {
@@ -285,4 +271,27 @@ test('reduces an owned mutation precondition error to blocked before a device se
   const result = await coordinator.getRun(accepted.id);
   assert.equal(result.state, 'blocked');
   assert.match(result.statusMessage ?? '', /Native POS context/);
+});
+
+test('routes recent-order correlation through the owned coordinator bridge with the tendered total', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-coordinator-recent-'));
+  let received: unknown;
+  const coordinator = createCoordinator({
+    root,
+    resolveRecentOrder: async ({ request: workerRequest, notBefore, total, lineCount }) => {
+      received = { shop: workerRequest.context?.shopGid, notBefore, total, lineCount };
+      return { orderGid: 'gid://shopify/Order/42', orderName: 'HCDEV#42' };
+    },
+    workerFactory: async ({ runId, artifactDir }) => {
+      const resolved = await createScenarioContext({ root, runId, bridgeTimeoutMs: 1_000 }).resolveRecentOrder({ notBefore: '2026-09-21T01:09:38.000Z', total: { amount: '171.00', currency: 'USD' }, lineCount: 2 });
+      await writeFile(join(artifactDir, 'result.json'), JSON.stringify({ passed: resolved.orderName === 'HCDEV#42' }));
+      return spawn(process.execPath, ['-e', 'setTimeout(() => {}, 50)'], { cwd: process.cwd(), env: { PATH: process.env.PATH ?? '' } });
+    },
+  });
+  const accepted = await coordinator.startRun({ ...request, context: {
+    connectionId: 'local', omsOrigin: 'https://oms.example', userId: 'user-1', connectorShopId: 'shop-1',
+    shopGid: 'gid://shopify/Shop/1', shopDomain: 'test.myshopify.com', locationGid: 'gid://shopify/Location/1', apiVersion: '2026-01',
+  } });
+  await eventually(async () => (await coordinator.getRun(accepted.id)).state === 'passed');
+  assert.deepEqual(received, { shop: 'gid://shopify/Shop/1', notBefore: '2026-09-21T01:09:38.000Z', total: { amount: '171.00', currency: 'USD' }, lineCount: 2 });
 });

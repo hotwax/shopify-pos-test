@@ -14,4 +14,11 @@ const wdaDerivedDataPath = resolve(process.env.WDA_DERIVED_DATA_PATH ?? '.wda/De
 if (!Number.isInteger(port) || port < 1024 || port > 65_535) throw new Error('APPIUM_PORT must be a valid local port.');
 if (!Number.isInteger(wdaLocalPort) || wdaLocalPort < 1024 || wdaLocalPort > 65_535) throw new Error('WDA_LOCAL_PORT must be a valid local port.');
 
-export const config: WebdriverIO.Config = makeWdioConfig({ runId, device: { id: 'local', ...device }, entry, artifactDir, port, wdaLocalPort, wdaDerivedDataPath });
+const sharedAppium = process.env.APPIUM_SHARED_SERVER === '1';
+// Set by the worker factory for scenarios that change the cart or the store,
+// so POS is left on Home with an empty cart whatever the spec's outcome.
+const afterSpec = process.env.POS_RESET_AFTER_SPEC === '1'
+  ? async () => { const { posReset } = await import('./test/screens/pos-reset.ts'); await posReset.clearCartAndReturnHome(); }
+  : undefined;
+
+export const config: WebdriverIO.Config = makeWdioConfig({ runId, device: { id: 'local', ...device }, entry, artifactDir, port, wdaLocalPort, wdaDerivedDataPath, sharedAppium, afterSpec });

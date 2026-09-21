@@ -5,7 +5,6 @@ export type RunState =
   | 'validating'
   | 'preparing'
   | 'running'
-  | 'awaiting-approval'
   | 'verifying'
   | 'passed'
   | 'failed'
@@ -45,9 +44,18 @@ export interface ScenarioDescriptor {
 
 export interface DeviceProfile {
   id: string;
+  /** Friendly label shown to operators; id remains an internal stable key. */
+  name?: string;
   udid: string;
+  model?: string;
+  os?: string;
   teamId: string;
   wdaBundleId: string;
+}
+
+export interface SetupDefaults {
+  developmentTeamIds: string[];
+  recommendedWdaBundleId: string;
 }
 
 export interface TargetContext {
@@ -76,7 +84,7 @@ export interface RunEvent {
   sequence: number;
   at: string;
   type: 'run-state' | 'step-started' | 'step-finished' | 'assertion' |
-    'artifact' | 'approval-required' | 'business-effect';
+    'artifact' | 'business-effect';
   stepId?: string;
   data: Record<string, unknown>;
 }
@@ -92,20 +100,7 @@ export interface RunRecord {
   createdAt: string;
   resourceIds: Record<string, string[]>;
   assertions: { lane: 'pos' | 'shopify' | 'oms'; status: string; message: string }[];
-  pendingApproval?: PendingApproval;
   businessEffectIntentHash?: string;
-}
-
-export interface PendingApproval {
-  intentHash: string;
-  summary: {
-    scenario: string;
-    direction: 'collect' | 'even' | 'refund';
-    amount: Money;
-    lineCount: number;
-    sourceOrderGid?: string;
-  };
-  requestedAt: string;
 }
 
 export interface SetupCheck {
@@ -114,12 +109,6 @@ export interface SetupCheck {
   message: string;
   checkedAt?: string;
   actions: string[];
-}
-
-export interface MutationReadiness {
-  enabled: boolean;
-  policyTargetCount: number;
-  reasons: string[];
 }
 
 export interface Page<T> {
@@ -133,6 +122,8 @@ export interface OmsConnectionSummary {
   origin: string;
   state: 'configured' | 'connected' | 'expired' | 'error';
   userId?: string;
+  username?: string;
+  userFullName?: string;
   expiresAt?: string;
   error?: string;
 }
@@ -145,9 +136,68 @@ export interface OmsShop {
   locationGid: string | null;
   currency: string | null;
   timezone: string | null;
+  apiVersion: string | null;
 }
 
-export interface OmsVariant { gid: string; productGid: string; title: string; productTitle: string; sku: string | null; }
+export interface SavedOmsConnection {
+  id: string;
+  instanceName: string;
+  username: string;
+  label: string;
+  autoConnect: boolean;
+  updatedAt: string;
+}
+
+export interface OmsPosOrderItem { title: string; quantity: number }
+
+export interface OmsPosOrder {
+  gid: string;
+  name: string;
+  createdAt: string | null;
+  financialStatus: string | null;
+  fulfillmentStatus: string | null;
+  customerName: string | null;
+  total: Money | null;
+  items: OmsPosOrderItem[];
+  /** True when the order has more lines than the preview shows. */
+  hasMoreItems: boolean;
+}
+
+export interface OmsCustomer {
+  gid: string;
+  displayName: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  phone: string | null;
+  orderCount: number | null;
+  location: string | null;
+}
+
+export interface OmsVariant {
+  gid: string;
+  productGid: string;
+  title: string;
+  productTitle: string;
+  sku: string | null;
+  price: string | null;
+  compareAtPrice: string | null;
+  availableForSale: boolean | null;
+  productStatus: string | null;
+  imageUrl: string | null;
+  inventoryTracked: boolean | null;
+  // Stock at the expected POS location. `null` means it was not read (no
+  // location scope) or the item is untracked, which is not the same as zero.
+  availableAtLocation: number | null;
+  totalInventory: number | null;
+  // Variant facts of the parent product. POS adds a product with only the
+  // default variant straight to the cart but opens a variant picker for a
+  // multi-variant product, so the planner records which to expect. `null`
+  // means the field was not read (the unscoped explorer query) or Shopify
+  // reported an inexact count.
+  hasOnlyDefaultVariant: boolean | null;
+  productVariantCount: number | null;
+}
 export interface OmsOrder { gid: string; name: string; financialStatus: string | null; fulfillmentStatus: string | null; }
 export interface OmsShopifyOrderLine {
   gid: string;
@@ -159,6 +209,10 @@ export interface OmsShopifyOrderLine {
   sku: string | null;
   productGid: string | null;
   productTitle: string | null;
+  // Same product variant facts as OmsVariant, so a cart seeded from an order
+  // can plan the POS add-to-cart path too.
+  hasOnlyDefaultVariant: boolean | null;
+  productVariantCount: number | null;
 }
 export interface OmsShopifyOrderTransaction {
   id: string;
@@ -182,6 +236,14 @@ export interface OmsShopifyOrderAgreement {
   returnName: string | null;
   sales: OmsShopifyOrderAgreementSale[];
 }
+export interface OmsOrderCustomer {
+  gid: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+}
+
 export interface OmsShopifyOrderDetail {
   gid: string;
   legacyResourceId: string | null;
@@ -190,6 +252,7 @@ export interface OmsShopifyOrderDetail {
   fulfillmentStatus: string | null;
   total: Money | null;
   paymentGatewayNames: string[];
+  customer: OmsOrderCustomer | null;
   transactions: OmsShopifyOrderTransaction[];
   agreements: OmsShopifyOrderAgreement[];
   lines: OmsShopifyOrderLine[];

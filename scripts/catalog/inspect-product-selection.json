@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.inspect-product-selection",
+  "name": "Inspect product selection",
+  "description": "Discovery only. Searches Shopify POS products, taps one exact product row by its Shopify product id, and captures the surface that follows so the add-to-cart contract can be identified. No item is purchased.",
+  "domain": "shopify-pos",
+  "scenario": "pos.inspect-product-selection",
+  "scenarioVersion": 1,
+  "parameters": { "search": "AnimeAvatar Sing", "productId": "10256354705572" },
+  "assertionMode": "pos",
+  "tags": ["diagnostic", "product-search", "discovery"]
+}

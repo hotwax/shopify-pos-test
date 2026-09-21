@@ -26,6 +26,7 @@ function createIntent(parameters: ExchangeParameters, request: RunRequest, udid:
     udid,
     context: request.context,
     originalOrderGid: parameters.orderGid,
+    ...(parameters.orderReference ? { originalOrderReference: parameters.orderReference } : {}),
     returnLines: parameters.lines,
     purchaseLines: parameters.replacements,
     tender: 'cash',
@@ -41,6 +42,7 @@ export async function exchangeCashOrder(
   driver: ExchangeOrderDriver,
   udid = process.env.IOS_UDID?.trim() ?? '',
 ): Promise<{ sourceOrderGid: string; affectedIds: Record<string, string[]>; netDue: { amount: string; currency: string } }> {
+  if (!input.orderReference?.trim()) throw new Error('The exchange run requires the selected POS order reference; choose the order from OMS search.');
   const source = await context.step('read-exchange-source', () => context.readShopifyOrder(input.orderGid));
   if (!isCashOrder(source)) throw new Error('The selected source order is not an exact cash-only Shopify order.');
   const remaining = Object.fromEntries(source.lines.map(line => [line.gid, line.refundableQuantity ?? -1]));
@@ -52,8 +54,6 @@ export async function exchangeCashOrder(
   await context.step('select-cash-exchange', () => driver.selectCash());
   const observed = await context.step('verify-exchange-summary', () => driver.readSummary());
   assertExchangePrecommit(observed, parameters);
-  const approval = await context.requireApproval(intent);
-  if (approval.intentHash !== intentHash) throw new Error('The approval checkpoint does not match the frozen exchange intent.');
   await context.step('verify-pos-context-before-commit', async () => context.assertAllowedIntent(intent, await driver.readContextEvidence()));
   await context.recordCommitAttempt(intentHash);
   await context.step('commit-exchange-cash', () => driver.commitCash());

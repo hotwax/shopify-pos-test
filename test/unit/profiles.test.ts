@@ -10,8 +10,9 @@ const profile: DeviceProfile = { id: 'test-ipad', udid: '00008103-00000000000000
 
 test('saves and reloads device profile metadata atomically', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ios-testing-profiles-'));
-  await saveDeviceProfile(root, profile);
-  assert.deepEqual(await loadDeviceProfiles(root), [profile]);
+  const saved = { ...profile, name: 'Brooklyn POS iPad', model: 'iPad Pro', os: '27.0' };
+  await saveDeviceProfile(root, saved);
+  assert.deepEqual(await loadDeviceProfiles(root), [saved]);
 });
 
 test('rejects profile values that could escape the local profile store', async () => {

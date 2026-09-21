@@ -7,12 +7,20 @@ export type MutationScenarioId = 'pos.create-cash-order' | 'pos.return-cash-orde
 export interface PosPlanInput {
   scenario: MutationScenarioId;
   currency: string;
-  maximumTotal: string;
-  maximumRefund: string;
   maximumDifference: string;
   variantGid: string;
+  productGid: string;
+  search: string;
   quantity: string;
+  /**
+   * Cart lines for a create-order plan. When present and non-empty this wins
+   * over the single `variantGid`/`quantity` pair, so a multi-item cart is
+   * frozen as the operator built it. The safety layer already dedupes and
+   * bounds every line.
+   */
+  lines?: { variantGid: string; productGid: string; search: string; quantity: string; imageUrl?: string | null; variantSelection?: string }[];
   orderGid: string;
+  orderReference: string;
   lineGid: string;
   returnQuantity: string;
   restock: boolean;
@@ -28,6 +36,7 @@ export type BuiltMutationParameters = CreateOrderParameters | ReturnParameters |
 const orderGid = /^gid:\/\/shopify\/Order\/[A-Za-z0-9_-]+$/;
 const lineGid = /^gid:\/\/shopify\/LineItem\/[A-Za-z0-9_-]+$/;
 const variantGid = /^gid:\/\/shopify\/ProductVariant\/[A-Za-z0-9_-]+$/;
+const productGid = /^gid:\/\/shopify\/Product\/[A-Za-z0-9_-]+$/;
 const amount = /^(?:0|[1-9]\d*)(?:\.\d{1,4})?$/;
 
 function exact(value: string, pattern: RegExp, label: string): string {
@@ -51,9 +60,19 @@ function money(value: string, currency: string, label: string): Money {
 
 export function buildMutationParameters(input: PosPlanInput): BuiltMutationParameters {
   if (input.scenario === 'pos.create-cash-order') {
+    const cartLines = input.lines?.length ? input.lines : [{ variantGid: input.variantGid, productGid: input.productGid, search: input.search, quantity: input.quantity }];
     const parameters: CreateOrderParameters = {
-      lines: [{ variantGid: exact(input.variantGid, variantGid, 'The product variant'), quantity: quantity(input.quantity, 'The create-order line') }],
-      maximumTotal: money(input.maximumTotal, input.currency, 'The maximum order'),
+      lines: cartLines.map(line => ({
+        variantGid: exact(line.variantGid, variantGid, 'The product variant'),
+        productGid: exact(line.productGid, productGid, 'The product'),
+        search: (line.search ?? '').trim(),
+        quantity: quantity(line.quantity, 'The create-order line'),
+        ...(line.imageUrl ? { imageUrl: line.imageUrl } : {}),
+        // Passed through as text; the safety layer rejects anything that is
+        // not single, multi or unknown.
+        ...(line.variantSelection !== undefined ? { variantSelection: line.variantSelection as CreateOrderParameters['lines'][number]['variantSelection'] } : {}),
+      })),
+      currency: input.currency.trim().toUpperCase(),
       ...(input.note.trim() ? { note: input.note.trim() } : {}),
     };
     return validateCreateOrder(parameters);
@@ -61,8 +80,8 @@ export function buildMutationParameters(input: PosPlanInput): BuiltMutationParam
 
   const returnParameters: ReturnParameters = {
     orderGid: exact(input.orderGid, orderGid, 'The source order'),
+    orderReference: input.orderReference.trim(),
     lines: [{ lineGid: exact(input.lineGid, lineGid, 'The source line'), quantity: quantity(input.returnQuantity, 'The return line'), restock: input.restock }],
-    maximumRefund: money(input.maximumRefund, input.currency, 'The maximum refund'),
   };
   if (input.scenario === 'pos.return-cash-order') return validateReturn(returnParameters, input.remaining);
 

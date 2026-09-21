@@ -12,7 +12,9 @@ function validate(profile: DeviceProfile): DeviceProfile {
   if (!udidPattern.test(profile.udid) || profile.udid === 'auto') throw new Error('Invalid device profile UDID.');
   if (!teamPattern.test(profile.teamId)) throw new Error('Invalid device profile team ID.');
   if (!bundlePattern.test(profile.wdaBundleId)) throw new Error('Invalid device profile WDA bundle ID.');
-  return { ...profile };
+  if (profile.name !== undefined && (typeof profile.name !== 'string' || !profile.name.trim() || profile.name.length > 80)) throw new Error('Invalid device profile name.');
+  for (const value of [profile.model, profile.os]) if (value !== undefined && (typeof value !== 'string' || value.length > 80)) throw new Error('Invalid device profile device details.');
+  return { ...profile, ...(profile.name === undefined ? {} : { name: profile.name.trim() }) };
 }
 
 function pathFor(root: string): string { return join(resolve(root), '.runtime', 'profiles.json'); }

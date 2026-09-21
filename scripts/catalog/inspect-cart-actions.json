@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.inspect-cart-actions",
+  "name": "Inspect cart actions menu",
+  "description": "Discovery only. Backs out of any open cash or payment surface, opens the cart More actions menu, and captures it so the clear-cart affordance can be identified. No payment is completed.",
+  "domain": "shopify-pos",
+  "scenario": "pos.inspect-cart-actions",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["diagnostic", "cart", "discovery"]
+}
