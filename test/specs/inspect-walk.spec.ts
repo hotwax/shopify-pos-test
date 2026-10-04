@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { browser } from '@wdio/globals';
 import { readScenarioRequest } from '../support/input.ts';
+import { posPin } from '../screens/pos-pin.ts';
 import { reportProgress } from '../support/progress.ts';
 
 /**
@@ -22,6 +23,7 @@ function screenIds(source: string): Set<string> {
 describe('Shopify POS discovery walk', () => {
   it('captures the current surface, then each requested non-committing tap', async () => {
     const request = await readScenarioRequest();
+    await posPin.unlockIfLocked();
     if (request.scriptId !== 'pos.inspect-walk' || request.assertionMode !== 'pos') {
       throw new Error('This native spec is bound to the pos.inspect-walk read-only request.');
     }

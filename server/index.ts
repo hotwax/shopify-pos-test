@@ -12,11 +12,33 @@ import { configuredOmsConnections } from '../core/oms/config.ts';
 import { autoConnectSavedOmsConnections } from '../core/storage/credentials.ts';
 
 const root = resolve(import.meta.dirname, '..');
+const port = 8127;
+const localUrl = `http://127.0.0.1:${port}`;
 const open = process.argv.includes('--open');
+
+function openInBrowser(url: string): void {
+  spawn('open', [url], { stdio: 'ignore', detached: true }).unref();
+}
+
+async function hostAnswers(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${url}/api/health`, { signal: AbortSignal.timeout(2_000) });
+    return response.ok && (await response.json() as { ok?: unknown }).ok === true;
+  } catch {
+    return false;
+  }
+}
+
 const lock = await createLaunchLock('serve', root);
 if (!lock.acquired) {
-  console.error(`A local host is already running (pid ${lock.owner?.pid ?? 'unknown'}).`);
-  process.exitCode = 1;
+  if (await hostAnswers(localUrl)) {
+    console.log(`HotWax POS Testing is already running at ${localUrl}`);
+    if (open) openInBrowser(localUrl);
+  } else {
+    console.error(`Another process (pid ${lock.owner?.pid ?? 'unknown'}) holds .runtime/localhost.lock, but nothing answers at ${localUrl}.`);
+    console.error('If no copy of this app is running, delete .runtime/localhost.lock and run ./run.sh again.');
+    process.exitCode = 1;
+  }
 } else {
   const oms = new OmsClient(configuredOmsConnections().connections);
   // One Appium server for the host's lifetime, started on the first run, so
@@ -38,17 +60,14 @@ if (!lock.acquired) {
       return resolveShopifyOrder(oms, request.context, { orderGid });
     },
   });
-  const server = await createApiServer({ port: 8127, mode: 'serve', root, staticDir: resolve(root, 'dist'), coordinator, oms });
+  const server = await createApiServer({ port, mode: 'serve', root, staticDir: resolve(root, 'dist'), coordinator, oms });
   console.log(`HotWax POS Testing is running at ${server.url}`);
   // Saved connections sign in here so a normal start needs no login. Failures
   // are reported and left for a manual login; they never block startup.
   const autoConnected = await autoConnectSavedOmsConnections(root, oms);
   if (autoConnected.connected.length) console.log(`Signed in to ${autoConnected.connected.length} saved OMS connection(s).`);
   for (const failure of autoConnected.failed) console.warn(`Saved OMS connection ${failure.id} did not sign in: ${failure.reason}`);
-  if (open) {
-    const child = spawn('open', [server.url], { stdio: 'ignore', detached: true });
-    child.unref();
-  }
+  if (open) openInBrowser(server.url);
   const shutdown = async () => { await appiumServer.stop().catch(() => undefined); await server.close().catch(() => undefined); await lock.release(); process.exit(0); };
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);

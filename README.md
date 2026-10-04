@@ -12,35 +12,41 @@ WebDriverAgent (WDA) helper is built and signed.
 
 ## Quick Start
 
-### 1. Prerequisites (One-time setup on a fresh Mac)
-* **Xcode** (Install from the Mac App Store; launch it once to install internal components).
-* **Node.js 24+** (Install from [nodejs.org](https://nodejs.org) or run `brew install node`).
+### 1. Before you start
+* **Xcode 27 or later.** Install or update it from the Mac App Store, then open it once.
+* **Node.js 20.19+, 22.12+ or 24+.** Install it from [nodejs.org](https://nodejs.org) or run `brew install node`.
+* **An iPad** with Shopify POS installed and signed in to your test store.
 
-### 2. Launch the Application
-Open **Terminal** and run:
+### 2. Start the app
+Open **Terminal** in the folder where you cloned this repository, then run:
 
 ```sh
-cd ~/Documents/GitHub/iosTesting
 ./run.sh
 ```
 
-**That's it!** `./run.sh` will automatically:
-* Check your Node and Xcode versions
-* Install dependencies (`npm ci`)
-* Build the local interface (`npm run build`)
-* Start the local server on `http://127.0.0.1:8127`
-* Open your browser directly to the **Onboarding** setup wizard
+`./run.sh` installs the dependencies, builds the app, starts it on
+`http://127.0.0.1:8127` and opens it in your browser. If the app is already
+running, it opens the running copy.
 
-All device discovery, Mac health checks, iPad pairing, and configuration are handled via button clicks in the browser.
+### 3. Follow the Onboarding pages
+The app checks your Mac, your iPad and your OMS login. Every check that fails
+tells you what to do next. Some steps need your Mac password or a tap on the
+iPad. The app never changes Apple security settings for you.
 
-### 3. Stopping the Application
-To stop the local server, press `Control + C` in the Terminal window running `./run.sh`.
+This path needs no `.env` file, and you do not need to open Xcode.
+
+### 4. Stop the app
+Press `Control + C` in the Terminal window that runs `./run.sh`.
 
 ---
 
-## Detailed Architecture & Advanced Setup
+## Advanced: command-line setup
 
-1. Install full Xcode and its iOS support, launch it once, and select it under
+Use these steps only to run tests from Terminal with `npm run doctor` or
+`npm run test:*`. Those commands read the iPad from a local `.env` file, not
+from the profile saved in the app.
+
+1. Install full Xcode 27 or later and its iOS support, launch it once, and select it under
    Xcode Settings → Locations → Command Line Tools. Use a Node version matching
    `package.json` (Node 24+ recommended).
 2. Connect an unlocked iPad over USB, trust the Mac, enable Developer Mode on
@@ -65,13 +71,17 @@ To stop the local server, press `Control + C` in the Terminal window running `./
 5. Run `npm run doctor`. It reads host/device/signing state; it does not change
    settings, create certificates or install apps. A pass is a prerequisite
    check, not proof that WDA is provisioned or that POS automation works.
-6. On iOS/iPadOS 18 and later, open a second Terminal and start Appium's
-   host-side RemoteXPC tunnel registry before running native tests:
+6. On iOS/iPadOS 18 and later, open a second Terminal in this repository
+   folder and start Appium's host-side RemoteXPC tunnel registry before
+   running native tests:
 
    ```sh
-   sudo env "PATH=$PATH" npx --no-install appium driver run xcuitest tunnel-creation
+   sudo env "PATH=$PATH" node node_modules/appium-xcuitest-driver/scripts/tunnel-creation.mjs
    ```
 
+   This runs the driver's tunnel script directly. Do not start it with
+   `sudo npx appium ...`. That makes Appium's cache folder belong to root, and
+   every later test run then fails.
    Complete the Mac authorization if prompted and leave this Terminal running.
    This is a host transport prerequisite, not an iPad setting; the toolkit
    only checks whether the local registry is available and never starts it or
@@ -101,7 +111,16 @@ in automatically when the server starts, so a normal start needs no login; a
 locked Keychain, a changed password or an OMS that is down degrades to a manual
 login rather than blocking startup. **Forget** deletes a stored password
 immediately. Anyone who can unlock your Mac account can use a remembered
-connection, so do not remember a production credential. The page stores only recently used OMS instance names in
+connection, so do not remember a production credential.
+
+The iPad setup page can also save a Shopify POS staff PIN for each iPad. Test
+runs type it when POS shows its staff PIN screen. It is stored the same way as a
+remembered OMS password: encrypted with its own key in your macOS login Keychain,
+in `.runtime/pos-pins.json` (mode 0600, gitignored). It never goes into a run's
+input file, the environment, or the logs. **Delete PIN** removes it. It does not
+sign POS back in when the whole store is signed out.
+
+The page stores only recently used OMS instance names in
 browser local storage and reconstructs their HTTPS origins when selected, so a
 teammate can return to an instance without retyping its URL. No arbitrary
 GraphQL text, Shopify mutation or POS

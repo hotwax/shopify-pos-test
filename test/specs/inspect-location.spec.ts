@@ -4,10 +4,12 @@ import { browser } from '@wdio/globals';
 import { pos } from '../screens/pos.ts';
 import * as s from '../screens/pos.selectors.ts';
 import { readScenarioRequest } from '../support/input.ts';
+import { posPin } from '../screens/pos-pin.ts';
 
 describe('Shopify POS location-context inspection', () => {
   it('reads the configured POS location and returns to Home without changing settings', async () => {
     const request = await readScenarioRequest();
+    await posPin.unlockIfLocked();
     if (request.scriptId !== 'pos.inspect-location' || request.assertionMode !== 'pos') {
       throw new Error('This native spec is bound to the pos.inspect-location read-only request.');
     }

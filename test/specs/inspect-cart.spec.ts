@@ -3,10 +3,12 @@ import { join, resolve } from 'node:path';
 import { browser } from '@wdio/globals';
 import { pos } from '../screens/pos.ts';
 import { readScenarioRequest } from '../support/input.ts';
+import { posPin } from '../screens/pos-pin.ts';
 
 describe('Shopify POS cart precondition inspection', () => {
   it('confirms an empty cart from Home without opening checkout', async () => {
     const request = await readScenarioRequest();
+    await posPin.unlockIfLocked();
     if (request.scriptId !== 'pos.inspect-cart' || request.assertionMode !== 'pos') {
       throw new Error('This native spec is bound to the pos.inspect-cart read-only request.');
     }

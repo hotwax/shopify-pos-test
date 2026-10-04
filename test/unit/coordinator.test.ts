@@ -11,6 +11,7 @@ import type { RunRequest } from '../../shared/contracts.ts';
 import { createScenarioContext } from '../../test/support/context.ts';
 import { readWorkerInput } from '../../core/runner/input.ts';
 import { RunBlockedError } from '../../core/runner/guards.ts';
+import { tunnelCommand } from '../../core/setup/checks.ts';
 
 const request: RunRequest = {
   scriptId: 'pos.open-first-order', deviceProfileId: 'test-ipad', parameters: {},
@@ -84,7 +85,7 @@ test('classifies a missing RemoteXPC tunnel as a blocked host precondition', asy
   assert.deepEqual(await classifyWorkerFailure(directory), {
     state: 'blocked',
     reason: 'remote-xpc-tunnel-unavailable',
-    message: 'The iOS RemoteXPC tunnel is not running. Start it from a separate Terminal with `sudo env "PATH=$PATH" npx --no-install appium driver run xcuitest tunnel-creation`, then start a fresh native run. The toolkit did not change iPad access settings.',
+    message: `The iOS RemoteXPC tunnel is not running. Start it from a separate Terminal with \`${tunnelCommand()}\`, then start a fresh native run. The toolkit did not change iPad access settings.`,
   });
 });
 

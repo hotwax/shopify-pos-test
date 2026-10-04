@@ -4,10 +4,12 @@ import { browser } from '@wdio/globals';
 import { pos } from '../screens/pos.ts';
 import * as s from '../screens/pos.selectors.ts';
 import { readScenarioRequest } from '../support/input.ts';
+import { posPin } from '../screens/pos-pin.ts';
 
 describe('Shopify POS order-action inspection', () => {
   it('captures the first order detail without opening a return or exchange flow', async () => {
     const request = await readScenarioRequest();
+    await posPin.unlockIfLocked();
     if (request.scriptId !== 'pos.inspect-order-actions' || request.assertionMode !== 'pos') {
       throw new Error('This native spec is bound to the pos.inspect-order-actions read-only request.');
     }

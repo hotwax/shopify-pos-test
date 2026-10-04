@@ -1,4 +1,5 @@
 import type { Money, TargetContext } from '../shared/contracts.ts';
+import { defaultReturnReason } from '../shared/return-reason.ts';
 import { isValidTargetContext } from '../core/safety/environment.ts';
 import { validateCreateOrder, validateExchange, validateReturn, type CreateOrderParameters, type ExchangeParameters, type ReturnParameters } from '../core/safety/transaction-inputs.ts';
 
@@ -12,12 +13,6 @@ export interface PosPlanInput {
   productGid: string;
   search: string;
   quantity: string;
-  /**
-   * Cart lines for a create-order plan. When present and non-empty this wins
-   * over the single `variantGid`/`quantity` pair, so a multi-item cart is
-   * frozen as the operator built it. The safety layer already dedupes and
-   * bounds every line.
-   */
   lines?: { variantGid: string; productGid: string; search: string; quantity: string; imageUrl?: string | null; variantSelection?: string }[];
   orderGid: string;
   orderReference: string;
@@ -25,6 +20,8 @@ export interface PosPlanInput {
   returnQuantity: string;
   restock: boolean;
   replacementVariantGid: string;
+  replacementProductGid: string;
+  replacementSearch: string;
   replacementQuantity: string;
   direction: ExchangeParameters['direction'];
   note: string;
@@ -68,8 +65,6 @@ export function buildMutationParameters(input: PosPlanInput): BuiltMutationParam
         search: (line.search ?? '').trim(),
         quantity: quantity(line.quantity, 'The create-order line'),
         ...(line.imageUrl ? { imageUrl: line.imageUrl } : {}),
-        // Passed through as text; the safety layer rejects anything that is
-        // not single, multi or unknown.
         ...(line.variantSelection !== undefined ? { variantSelection: line.variantSelection as CreateOrderParameters['lines'][number]['variantSelection'] } : {}),
       })),
       currency: input.currency.trim().toUpperCase(),
@@ -81,15 +76,22 @@ export function buildMutationParameters(input: PosPlanInput): BuiltMutationParam
   const returnParameters: ReturnParameters = {
     orderGid: exact(input.orderGid, orderGid, 'The source order'),
     orderReference: input.orderReference.trim(),
-    lines: [{ lineGid: exact(input.lineGid, lineGid, 'The source line'), quantity: quantity(input.returnQuantity, 'The return line'), restock: input.restock }],
+    lines: [{ lineGid: exact(input.lineGid, lineGid, 'The source line'), quantity: quantity(input.returnQuantity, 'The return line'), restock: input.restock, reason: defaultReturnReason }],
+    refundMethod: 'cash',
   };
   if (input.scenario === 'pos.return-cash-order') return validateReturn(returnParameters, input.remaining);
 
   const parameters: ExchangeParameters = {
     ...returnParameters,
-    replacements: [{ variantGid: exact(input.replacementVariantGid, variantGid, 'The replacement variant'), quantity: quantity(input.replacementQuantity, 'The replacement line') }],
+    replacements: [{
+      variantGid: exact(input.replacementVariantGid, variantGid, 'The replacement variant'),
+      productGid: exact(input.replacementProductGid, productGid, 'The replacement product'),
+      search: input.replacementSearch.trim(),
+      quantity: quantity(input.replacementQuantity, 'The replacement line'),
+    }],
     direction: input.direction,
     maximumDifference: money(input.maximumDifference, input.currency, 'The maximum exchange difference'),
+    collectMethod: 'cash',
   };
   return validateExchange(parameters, input.remaining);
 }

@@ -18,7 +18,6 @@
       <ion-grid fixed>
         <ion-row>
           <ion-col size="12" size-lg="9">
-            <!-- Development Preview Switcher -->
             <ion-item lines="none" class="preview-item">
               <ion-label><ion-note>Preview state:</ion-note></ion-label>
               <ion-select v-model="previewMode" interface="popover" @ionChange="applyPreview">
@@ -38,7 +37,6 @@
 
             <ion-text color="danger" v-if="error"><p role="alert">{{ error }}</p></ion-text>
 
-            <!-- 1. Runtime & Xcode Tools -->
             <ion-card>
               <ion-card-header>
                 <div class="card-heading">
@@ -53,7 +51,6 @@
               </ion-card-header>
               <ion-card-content>
                 <ion-list>
-                  <!-- Node.js Check -->
                   <ion-item class="check-item">
                     <ion-icon
                       :key="`node-${nodeCheck?.state}`"
@@ -78,7 +75,6 @@
                     </ion-badge>
                   </ion-item>
 
-                  <!-- Xcode Check -->
                   <ion-item class="check-item">
                     <ion-icon
                       :key="`xcode-${xcodeCheck?.state}`"
@@ -93,7 +89,6 @@
                       <div v-if="xcodeCheck && xcodeCheck.state !== 'ready'">
                         <p><ion-note color="warning">Next: {{ xcodeCheck.actions[0] }}</ion-note></p>
 
-                        <!-- Sub-case A: Command Line Tools active instead of full Xcode -->
                         <div v-if="xcodeCheck.message?.includes('Command Line Tools')">
                           <p>Switch your active developer path to full Xcode:</p>
                           <p class="code-line">
@@ -109,11 +104,16 @@
                           </p>
                         </div>
 
-                        <!-- Sub-case B: Full Xcode missing completely -->
+                        <p v-else-if="xcodeCheck.command" class="code-line">
+                          <code>{{ xcodeCheck.command }}</code>
+                          <ion-button fill="clear" size="small" @click="copyText(xcodeCheck.command)" title="Copy command">
+                            <ion-icon slot="icon-only" :icon="copyOutline" />
+                          </ion-button>
+                        </p>
+
                         <div v-else class="step-guide">
-                          <p><ion-note>Full Xcode is required for iPad testing (Command Line Tools alone are not sufficient).</ion-note></p>
                           <ol>
-                            <li>Download Xcode from the <a href="macappstore://apps.apple.com/app/xcode/id497799835">Mac App Store</a> or <a href="https://developer.apple.com/xcode/" target="_blank" rel="noopener">Apple Developer</a>.</li>
+                            <li>Download or update Xcode from the <a href="macappstore://apps.apple.com/app/xcode/id497799835">Mac App Store</a> or <a href="https://developer.apple.com/xcode/" target="_blank" rel="noopener">Apple Developer</a>.</li>
                             <li>Launch Xcode once after installation to let macOS install internal iOS device support packages.</li>
                             <li>Open Xcode Settings → Locations and confirm Command Line Tools points to Xcode.</li>
                             <li>Return here and click Re-run checks.</li>
@@ -125,11 +125,28 @@
                       {{ checkStateLabel(xcodeCheck?.state) }}
                     </ion-badge>
                   </ion-item>
+
+                  <ion-item v-if="cacheCheck && cacheCheck.state !== 'ready'" class="check-item">
+                    <ion-icon :icon="alertCircleOutline" color="warning" slot="start" />
+                    <ion-label class="ion-text-wrap">
+                      Appium cache folder
+                      <p>{{ cacheCheck.message }}</p>
+                      <p><ion-note color="warning">Next: {{ cacheCheck.actions[0] }}</ion-note></p>
+                      <p v-if="cacheCheck.command" class="code-line">
+                        <code>{{ cacheCheck.command }}</code>
+                        <ion-button fill="clear" size="small" @click="copyText(cacheCheck.command)" title="Copy command">
+                          <ion-icon slot="icon-only" :icon="copyOutline" />
+                        </ion-button>
+                      </p>
+                    </ion-label>
+                    <ion-badge slot="end" :color="badgeColor(cacheCheck.state)">
+                      {{ checkStateLabel(cacheCheck.state) }}
+                    </ion-badge>
+                  </ion-item>
                 </ion-list>
               </ion-card-content>
             </ion-card>
 
-            <!-- 2. Apple Developer Signing Identity -->
             <ion-card>
               <ion-card-header>
                 <div class="card-heading">
@@ -158,10 +175,18 @@
                         <ion-note>Detected Team ID: {{ defaults.developmentTeamIds.join(', ') }}</ion-note>
                       </p>
 
-                      <!-- Step-by-step guide when signing certificate is missing -->
                       <div v-if="signingCheck && signingCheck.state !== 'ready'" class="step-guide">
-                        <p><ion-note color="warning">Next: Sign in to Xcode and create an Apple Development certificate.</ion-note></p>
-                        <ol>
+                        <p><ion-note color="warning">Next: {{ signingCheck.actions[0] }}</ion-note></p>
+                        <p v-if="signingCheck.command" class="code-line">
+                          <code>{{ signingCheck.command }}</code>
+                          <ion-button fill="clear" size="small" @click="copyText(signingCheck.command)" title="Copy command">
+                            <ion-icon slot="icon-only" :icon="copyOutline" />
+                          </ion-button>
+                        </p>
+                        <p v-if="signingCheck.link">
+                          <a :href="signingCheck.link" target="_blank" rel="noopener">{{ signingCheck.command ? 'Or download the certificate yourself' : "Download Apple's intermediate certificate" }}</a>
+                        </p>
+                        <ol v-else>
                           <li>Open Xcode.</li>
                           <li>Open Settings (<code>⌘,</code>) and select the Apple Accounts tab.</li>
                           <li>Click the + button at the bottom left and sign in with your Apple ID (a free Personal Team works).</li>
@@ -179,7 +204,6 @@
               </ion-card-content>
             </ion-card>
 
-            <!-- 3. iOS 18+ Device Transport -->
             <ion-card>
               <ion-card-header>
                 <div class="card-heading">
@@ -204,14 +228,14 @@
                     <ion-label class="ion-text-wrap">
                       RemoteXPC tunnel (port 42314)
                       <p>{{ tunnelCheck?.message || 'Checking port 42314…' }}</p>
-                      <div v-if="tunnelCheck?.state !== 'ready'">
-                        <p><ion-note color="warning">Next: In a separate Terminal, start the registry:</ion-note></p>
-                        <p class="code-line">
-                          <code>sudo env "PATH=$PATH" npx --no-install appium driver run xcuitest tunnel-creation</code>
+                      <div v-if="tunnelCheck && tunnelCheck.state !== 'ready'">
+                        <p><ion-note color="warning">Next: {{ tunnelCheck.actions[0] }}</ion-note></p>
+                        <p v-if="tunnelCheck.command" class="code-line">
+                          <code>{{ tunnelCheck.command }}</code>
                           <ion-button
                             fill="clear"
                             size="small"
-                            @click="copyText('sudo env &quot;PATH=$PATH&quot; npx --no-install appium driver run xcuitest tunnel-creation')"
+                            @click="copyText(tunnelCheck.command)"
                             title="Copy command"
                           >
                             <ion-icon slot="icon-only" :icon="copyOutline" />
@@ -227,7 +251,9 @@
               </ion-card-content>
             </ion-card>
 
-            <!-- Bottom Actions -->
+            <p v-if="!loading && checks.length && !macReady">
+              <ion-note color="warning">Some Mac checks still need attention. The iPad steps will not work until every check above is green.</ion-note>
+            </p>
             <div class="button-row">
               <ion-button fill="outline" @click="handleReRun" :disabled="loading">
                 <ion-icon slot="start" :icon="refreshOutline" />
@@ -268,8 +294,10 @@ const nodeCheck = computed(() => checks.value.find(c => c.id === 'host.node'));
 const xcodeCheck = computed(() => checks.value.find(c => c.id === 'host.xcode'));
 const signingCheck = computed(() => checks.value.find(c => c.id === 'signing.identity'));
 const tunnelCheck = computed(() => checks.value.find(c => c.id === 'host.remote-xpc'));
+const cacheCheck = computed(() => checks.value.find(c => c.id === 'host.appium-cache'));
 
-const toolsReady = computed(() => nodeCheck.value?.state === 'ready' && xcodeCheck.value?.state === 'ready');
+const toolsReady = computed(() => nodeCheck.value?.state === 'ready' && xcodeCheck.value?.state === 'ready' && cacheCheck.value?.state !== 'action');
+const macReady = computed(() => checks.value.every(c => c.state === 'ready'));
 
 function badgeColor(state?: SetupCheck['state']): string {
   if (!state) return 'medium';
@@ -291,9 +319,7 @@ function checkStateLabel(state?: SetupCheck['state']): string {
 async function copyText(text: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(text);
-  } catch {
-    // clipboard fallback
-  }
+  } catch {}
 }
 
 async function loadRealChecks(): Promise<void> {
@@ -348,7 +374,7 @@ function applyPreview(): void {
       { id: 'host.node', state: 'ready', message: 'Node 26.4.0 is supported.', actions: [] },
       { id: 'host.xcode', state: 'ready', message: 'Xcode 27.0 Build version 27A266a', actions: [] },
       { id: 'signing.identity', state: 'ready', message: 'A valid Apple development identity is available in Keychain.', actions: [] },
-      { id: 'host.remote-xpc', state: 'action', message: 'The Appium RemoteXPC tunnel registry is not running on port 42314.', actions: ['In a separate Terminal, run `sudo env "PATH=$PATH" npx --no-install appium driver run xcuitest tunnel-creation`, complete the Mac authorization if prompted, and leave it running.'] },
+      { id: 'host.remote-xpc', state: 'action', message: 'The Appium RemoteXPC tunnel registry is not running on port 42314.', actions: ['In a separate Terminal, run this command, complete the Mac authorization if prompted, and leave it running.'], command: 'sudo env "PATH=$PATH" node "/path/to/this/repo/node_modules/appium-xcuitest-driver/scripts/tunnel-creation.mjs"' },
     ];
     defaults.value = { developmentTeamIds: ['Z8AD6NZM2N'], recommendedWdaBundleId: 'co.hotwax.iosTesting.WDARunner' };
   }

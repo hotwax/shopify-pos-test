@@ -623,8 +623,6 @@ function friendlyPlanError(message: string): string {
 }
 
 function planInput(): PosPlanInput {
-  // A create-order run is frozen against the cart. Return and exchange keep
-  // their own source-order inputs.
   const fromCart = selectedScenario.value === 'pos.create-cash-order';
   return {
     scenario: selectedScenario.value as MutationScenarioId,
@@ -632,7 +630,7 @@ function planInput(): PosPlanInput {
     maximumDifference: maximumDifference.value,
     ...(fromCart ? { lines: cart.executableLines.map(line => ({ variantGid: line.variantGid, productGid: line.productGid, search: line.search, quantity: String(line.quantity), variantSelection: line.variantSelection })) } : {}),
     variantGid: variantGid.value, productGid: selectedVariant.value?.productGid ?? '', search: selectedVariant.value?.productTitle || '', quantity: quantity.value, orderGid: orderGid.value, orderReference: selectedOrderDetail.value?.name ?? '', lineGid: lineGid.value, returnQuantity: returnQuantity.value, restock: restock.value,
-    replacementVariantGid: replacementVariantGid.value, replacementQuantity: replacementQuantity.value, direction: direction.value, note: fromCart ? cart.note : note.value,
+    replacementVariantGid: replacementVariantGid.value, replacementProductGid: selectedReplacementVariant.value?.productGid ?? '', replacementSearch: selectedReplacementVariant.value?.productTitle || '', replacementQuantity: replacementQuantity.value, direction: direction.value, note: fromCart ? cart.note : note.value,
     remaining: Object.fromEntries((selectedOrderDetail.value?.lines ?? []).map(line => [line.gid, line.refundableQuantity ?? -1])),
   };
 }

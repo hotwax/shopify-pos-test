@@ -1,4 +1,4 @@
-import type { OmsCustomer, OmsPosOrder, SavedOmsConnection, DeviceProfile, OmsConnectionSummary, OmsLocation, OmsOrder, OmsOrderDetail, OmsOrderRecord, OmsShop, OmsShopifyOrderDetail, OmsVariant, RunRecord, RunRequest, ScriptDefinition, SetupCheck, SetupDefaults } from '../shared/contracts.ts';
+import type { OmsCustomer, OmsPosOrder, SavedOmsConnection, DeviceProfile, OmsConnectionSummary, OmsLocation, OmsOrder, OmsOrderDetail, OmsOrderRecord, OmsShop, OmsShopifyOrderDetail, OmsVariant, RunRecord, RunRequest, SavedPosPin, ScriptDefinition, SetupCheck, SetupDefaults } from '../shared/contracts.ts';
 
 let sessionToken: string | null = null;
 let sessionHandshake: Promise<unknown> | null = null;
@@ -99,6 +99,21 @@ export async function checkSetup(profile: DeviceProfile): Promise<{ checks: Setu
 export async function saveProfile(profile: DeviceProfile): Promise<{ profiles: DeviceProfile[] }> {
   if (!sessionToken) await getHealth();
   return request('/api/setup/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(profile) });
+}
+
+export async function getPosPin(udid: string): Promise<{ saved: SavedPosPin | null }> {
+  if (!sessionToken) await getHealth();
+  return request(`/api/setup/pos-pin?udid=${encodeURIComponent(udid)}`);
+}
+
+export async function savePosPin(udid: string, pin: string): Promise<{ saved: SavedPosPin }> {
+  if (!sessionToken) await getHealth();
+  return request('/api/setup/pos-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ udid, pin }) });
+}
+
+export async function forgetPosPin(udid: string): Promise<{ removed: boolean }> {
+  if (!sessionToken) await getHealth();
+  return request('/api/setup/pos-pin/forget', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ udid }) });
 }
 
 export async function listRuns(): Promise<{ runs: RunRecord[] }> {

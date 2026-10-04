@@ -4,6 +4,7 @@ import { browser } from '@wdio/globals';
 import { pos } from '../screens/pos.ts';
 import * as s from '../screens/pos.selectors.ts';
 import { readScenarioRequest } from '../support/input.ts';
+import { posPin } from '../screens/pos-pin.ts';
 
 /**
  * Discovery only. Opens product search, types a broad term, captures the result
@@ -13,6 +14,7 @@ import { readScenarioRequest } from '../support/input.ts';
 describe('Shopify POS product results inspection', () => {
   it('searches products and captures the result and selection surfaces', async () => {
     const request = await readScenarioRequest();
+    await posPin.unlockIfLocked();
     if (request.scriptId !== 'pos.inspect-product-results' || request.assertionMode !== 'pos') {
       throw new Error('This native spec is bound to the pos.inspect-product-results request.');
     }

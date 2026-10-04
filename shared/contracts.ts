@@ -109,6 +109,8 @@ export interface SetupCheck {
   message: string;
   checkedAt?: string;
   actions: string[];
+  command?: string;
+  link?: string;
 }
 
 export interface Page<T> {
@@ -137,6 +139,11 @@ export interface OmsShop {
   currency: string | null;
   timezone: string | null;
   apiVersion: string | null;
+}
+
+export interface SavedPosPin {
+  udid: string;
+  updatedAt: string;
 }
 
 export interface SavedOmsConnection {

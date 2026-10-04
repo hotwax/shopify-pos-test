@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { browser } from '@wdio/globals';
 import * as s from '../screens/pos.selectors.ts';
 import { readScenarioRequest } from '../support/input.ts';
+import { posPin } from '../screens/pos-pin.ts';
 
 /**
  * Discovery only, and deliberately narrow: it expects POS to already be on the
@@ -13,6 +14,7 @@ import { readScenarioRequest } from '../support/input.ts';
 describe('Shopify POS cash tender surface inspection', () => {
   it('opens the observed Cash tender surface and captures it without completing a sale', async () => {
     const request = await readScenarioRequest();
+    await posPin.unlockIfLocked();
     if (request.scriptId !== 'pos.inspect-cash-tender' || request.assertionMode !== 'pos') {
       throw new Error('This native spec is bound to the pos.inspect-cash-tender request.');
     }

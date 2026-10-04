@@ -4,6 +4,7 @@ import { browser } from '@wdio/globals';
 import { pos } from '../screens/pos.ts';
 import * as s from '../screens/pos.selectors.ts';
 import { readScenarioRequest } from '../support/input.ts';
+import { posPin } from '../screens/pos-pin.ts';
 
 /**
  * Discovery only. Searches products, taps one exact product row by its Shopify
@@ -13,6 +14,7 @@ import { readScenarioRequest } from '../support/input.ts';
 describe('Shopify POS product selection inspection', () => {
   it('selects one exact product row by id and captures the resulting surface', async () => {
     const request = await readScenarioRequest();
+    await posPin.unlockIfLocked();
     if (request.scriptId !== 'pos.inspect-product-selection' || request.assertionMode !== 'pos') {
       throw new Error('This native spec is bound to the pos.inspect-product-selection request.');
     }

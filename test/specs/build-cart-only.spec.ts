@@ -6,6 +6,7 @@ import type { CartLineRequest } from '../screens/pos-cart.ts';
 import { buildCart, readBoundedCartTotal } from '../flows/cash-sale.ts';
 import { validateCreateOrder } from '../../core/safety/transaction-inputs.ts';
 import { readScenarioRequest } from '../support/input.ts';
+import { posPin } from '../screens/pos-pin.ts';
 import { reportProgress } from '../support/progress.ts';
 
 /**
@@ -17,6 +18,7 @@ import { reportProgress } from '../support/progress.ts';
 describe('Shopify POS cart build rehearsal', () => {
   it('adds the frozen lines, reads the total, and clears the cart without paying', async () => {
     const request = await readScenarioRequest();
+    await posPin.unlockIfLocked();
     if (request.scriptId !== 'pos.build-cart-only' || request.assertionMode !== 'pos') {
       throw new Error('This native spec is bound to the pos.build-cart-only request.');
     }

@@ -15,7 +15,7 @@
     </ion-header>
     <ion-content class="ion-padding">
       <h1>OMS data connection</h1>
-      <p>Connect to a test OMS instance from this page. Credentials are sent only to the localhost sidecar and the OMS login endpoint; they are cleared after login and are never stored by this app.</p>
+      <p>Connect to a test OMS instance from this page. Credentials are sent only to the localhost sidecar and the OMS login endpoint. The app keeps your password only if you tick Remember this connection on this Mac.</p>
       <ion-text color="danger" v-if="error"><p role="alert">{{ error }}</p></ion-text>
 
       <ion-card v-if="activeConnection?.state === 'connected'">
