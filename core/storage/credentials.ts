@@ -1,8 +1,9 @@
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { timingSafeEqual } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { normalizeOmsInstanceName } from '../../shared/oms-origin.ts';
-import { loadOrCreateCredentialKey } from './credential-key.ts';
+import { loadOrCreateCredentialKey, omsKeychainAccount } from './credential-key.ts';
+import { seal, unseal, writeOwnerOnlyJson, type Sealed } from './sealed-store.ts';
 
 export interface SavedOmsConnection {
   id: string;
@@ -13,18 +14,13 @@ export interface SavedOmsConnection {
   updatedAt: string;
 }
 
-interface StoredRecord extends SavedOmsConnection {
-  iv: string;
-  authTag: string;
-  secret: string;
-}
+interface StoredRecord extends SavedOmsConnection, Sealed {}
 
 interface StoreFile {
   version: 1;
   entries: StoredRecord[];
 }
 
-const algorithm = 'aes-256-gcm';
 const currentVersion = 1;
 const maxUsernameLength = 200;
 const maxPasswordLength = 400;
@@ -43,21 +39,6 @@ function associatedData(instanceName: string, username: string): Buffer {
   return Buffer.from(`${currentVersion}:${instanceName}:${username}`, 'utf8');
 }
 
-function encrypt(key: Buffer, password: string, instanceName: string, username: string): Pick<StoredRecord, 'iv' | 'authTag' | 'secret'> {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv(algorithm, key, iv);
-  cipher.setAAD(associatedData(instanceName, username));
-  const secret = Buffer.concat([cipher.update(password, 'utf8'), cipher.final()]);
-  return { iv: iv.toString('base64'), authTag: cipher.getAuthTag().toString('base64'), secret: secret.toString('base64') };
-}
-
-function decrypt(key: Buffer, record: StoredRecord): string {
-  const decipher = createDecipheriv(algorithm, key, Buffer.from(record.iv, 'base64'));
-  decipher.setAAD(associatedData(record.instanceName, record.username));
-  decipher.setAuthTag(Buffer.from(record.authTag, 'base64'));
-  return Buffer.concat([decipher.update(Buffer.from(record.secret, 'base64')), decipher.final()]).toString('utf8');
-}
-
 function publicView(record: StoredRecord): SavedOmsConnection {
   const { iv: _iv, authTag: _authTag, secret: _secret, ...rest } = record;
   return rest;
@@ -74,13 +55,7 @@ async function readStore(root: string): Promise<StoreFile> {
 }
 
 async function writeStore(root: string, file: StoreFile): Promise<void> {
-  const target = pathFor(root);
-  await mkdir(resolve(root, '.runtime'), { recursive: true });
-  const temporary = `${target}.tmp-${process.pid}-${Date.now()}`;
-  // 0600 before the rename, so the file is never briefly world-readable.
-  await writeFile(temporary, JSON.stringify(file, null, 2), { mode: 0o600 });
-  await chmod(temporary, 0o600);
-  await rename(temporary, target);
+  await writeOwnerOnlyJson(pathFor(root), file);
 }
 
 export async function listSavedOmsConnections(root: string): Promise<SavedOmsConnection[]> {
@@ -94,7 +69,7 @@ export async function saveOmsCredential(root: string, input: { instanceName: str
   if (!username || username.length > maxUsernameLength) throw new Error('A username is required to save a connection.');
   if (!input.password || input.password.length > maxPasswordLength) throw new Error('A password is required to save a connection.');
 
-  const key = await loadOrCreateCredentialKey();
+  const key = await loadOrCreateCredentialKey(omsKeychainAccount);
   const record: StoredRecord = {
     id: idFor(instanceName, username),
     instanceName,
@@ -102,7 +77,7 @@ export async function saveOmsCredential(root: string, input: { instanceName: str
     label: (input.label ?? instanceName).trim().slice(0, 120) || instanceName,
     autoConnect: input.autoConnect !== false,
     updatedAt: new Date().toISOString(),
-    ...encrypt(key, input.password, instanceName, username),
+    ...seal(key, input.password, associatedData(instanceName, username)),
   };
 
   const file = await readStore(root);
@@ -114,10 +89,10 @@ export async function readOmsCredential(root: string, id: string): Promise<{ ins
   const file = await readStore(root);
   const record = file.entries.find(entry => entry.id === id);
   if (!record) return null;
-  const key = await loadOrCreateCredentialKey();
+  const key = await loadOrCreateCredentialKey(omsKeychainAccount);
   // A tampered record fails the GCM auth tag here and is reported as unusable
   // rather than returning half-decrypted bytes.
-  const password = decrypt(key, record);
+  const password = unseal(key, record, associatedData(record.instanceName, record.username));
   return { instanceName: record.instanceName, username: record.username, password };
 }
 

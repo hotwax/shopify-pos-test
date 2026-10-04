@@ -8,6 +8,7 @@ import { validateCreateOrder } from '../../core/safety/transaction-inputs.ts';
 import { hashIntent } from '../../core/safety/intent.ts';
 import { createScenarioContext } from '../support/context.ts';
 import { readScenarioRequest } from '../support/input.ts';
+import { posPin } from '../screens/pos-pin.ts';
 import { reportProgress } from '../support/progress.ts';
 
 /**
@@ -27,6 +28,7 @@ import { reportProgress } from '../support/progress.ts';
 describe('Shopify POS cash order', () => {
   it('rings one bounded cash sale from exact product ids and confirms it in Shopify', async () => {
     const request = await readScenarioRequest();
+    await posPin.unlockIfLocked();
     if (request.scriptId !== 'pos.create-cash-order') {
       throw new Error('This native spec is bound to the pos.create-cash-order request.');
     }

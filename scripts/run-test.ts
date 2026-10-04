@@ -8,7 +8,7 @@ import { isTerminalState } from '../core/runner/protocol.ts';
 import { readDeviceConfig } from '../config/device.ts';
 import { registry } from '../test/scenarios/registry.ts';
 import { assertScenarioCanRun, RunBlockedError } from '../core/runner/guards.ts';
-import { probeRemoteXpcTunnel, readDeviceLockState, remoteXpcTunnelBlockedMessage, requiresRemoteXpc } from '../core/setup/checks.ts';
+import { readDeviceLockState, remoteXpcTunnelBlockedMessage, remoteXpcTunnelLostMessage, remoteXpcTunnelState, requiresRemoteXpc } from '../core/setup/checks.ts';
 import { validateRunRequestAgainstCatalog } from '../core/catalog/validate.ts';
 
 const root = resolve(import.meta.dirname, '..');
@@ -42,8 +42,10 @@ const coordinator = createCoordinator({
     if (lockState.passcodeRequired) {
       throw new RunBlockedError('device-locked', 'CoreDevice reports that the iPad is locked. Unlock it yourself and leave Shopify POS on Home; the toolkit did not change iPad access settings.');
     }
-    if (await requiresRemoteXpc(device.udid) && !await probeRemoteXpcTunnel()) {
-      throw new RunBlockedError('remote-xpc-tunnel-unavailable', remoteXpcTunnelBlockedMessage);
+    if (await requiresRemoteXpc(device.udid)) {
+      const tunnel = await remoteXpcTunnelState(device.udid);
+      if (tunnel === 'no-ipad') throw new RunBlockedError('remote-xpc-tunnel-unavailable', remoteXpcTunnelLostMessage);
+      if (tunnel === 'not-running') throw new RunBlockedError('remote-xpc-tunnel-unavailable', remoteXpcTunnelBlockedMessage);
     }
     // One reusable WebDriverAgent build. A per-run DerivedData directory forced
     // a full Xcode rebuild of WDA on every run (~130MB and minutes each time).

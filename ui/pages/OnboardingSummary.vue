@@ -23,7 +23,6 @@
 
             <ion-text color="danger" v-if="error"><p role="alert">{{ error }}</p></ion-text>
 
-            <!-- Step 1: Mac Host & Tools -->
             <ion-card class="summary-card">
               <ion-card-header>
                 <div class="card-heading">
@@ -91,6 +90,14 @@
                       <p>{{ tunnelCheck?.message || 'Checking…' }}</p>
                     </ion-label>
                   </ion-item>
+
+                  <ion-item v-if="cacheCheck && cacheCheck.state !== 'ready'">
+                    <ion-icon :icon="alertCircleOutline" color="warning" slot="start" />
+                    <ion-label>
+                      Appium cache folder
+                      <p>{{ cacheCheck.message }}</p>
+                    </ion-label>
+                  </ion-item>
                 </ion-list>
 
                 <div class="card-action-row">
@@ -107,7 +114,6 @@
               </ion-card-content>
             </ion-card>
 
-            <!-- Step 2: Connect Test iPad -->
             <ion-card class="summary-card">
               <ion-card-header>
                 <div class="card-heading">
@@ -146,7 +152,6 @@
               </ion-card-content>
             </ion-card>
 
-            <!-- Step 3: OMS Connection -->
             <ion-card class="summary-card">
               <ion-card-header>
                 <div class="card-heading">
@@ -181,7 +186,6 @@
               </ion-card-content>
             </ion-card>
 
-            <!-- Bottom Navigation to POS when ready -->
             <div v-if="macReady && ipadReady" class="bottom-action-row ion-margin-top ion-margin-bottom">
               <ion-button
                 router-link="/pos"
@@ -223,6 +227,7 @@ const nodeCheck = computed(() => checks.value.find(c => c.id === 'host.node'));
 const xcodeCheck = computed(() => checks.value.find(c => c.id === 'host.xcode'));
 const signingCheck = computed(() => checks.value.find(c => c.id === 'signing.identity'));
 const tunnelCheck = computed(() => checks.value.find(c => c.id === 'host.remote-xpc'));
+const cacheCheck = computed(() => checks.value.find(c => c.id === 'host.appium-cache'));
 
 const nodeReady = computed(() => nodeCheck.value?.state === 'ready');
 const xcodeReady = computed(() => xcodeCheck.value?.state === 'ready');

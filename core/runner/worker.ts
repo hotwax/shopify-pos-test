@@ -8,7 +8,7 @@ import type { AppiumServerHost } from './appium-server.ts';
 import { registry } from '../../test/scenarios/registry.ts';
 import { assertScenarioCanRun, RunBlockedError } from './guards.ts';
 import { validateRunRequestAgainstCatalog } from '../catalog/validate.ts';
-import { probeRemoteXpcTunnel, readDeviceLockState, remoteXpcTunnelBlockedMessage, requiresRemoteXpc } from '../setup/checks.ts';
+import { readDeviceLockState, remoteXpcTunnelBlockedMessage, remoteXpcTunnelLostMessage, remoteXpcTunnelState, requiresRemoteXpc } from '../setup/checks.ts';
 
 export interface WorkerFactoryOptions {
   /**
@@ -34,8 +34,10 @@ export function createWdioWorkerFactory(root: string, options: WorkerFactoryOpti
     if (lockState.passcodeRequired) {
       throw new RunBlockedError('device-locked', 'CoreDevice reports that the iPad is locked. Unlock it yourself and leave Shopify POS on Home; the toolkit did not change iPad access settings.');
     }
-    if (await requiresRemoteXpc(profile.udid) && !await probeRemoteXpcTunnel()) {
-      throw new RunBlockedError('remote-xpc-tunnel-unavailable', remoteXpcTunnelBlockedMessage);
+    if (await requiresRemoteXpc(profile.udid)) {
+      const tunnel = await remoteXpcTunnelState(profile.udid);
+      if (tunnel === 'no-ipad') throw new RunBlockedError('remote-xpc-tunnel-unavailable', remoteXpcTunnelLostMessage);
+      if (tunnel === 'not-running') throw new RunBlockedError('remote-xpc-tunnel-unavailable', remoteXpcTunnelBlockedMessage);
     }
     const shared = options.appiumServer ? await options.appiumServer.ensureStarted() : undefined;
     const appiumPort = shared ? shared.port : await findAvailablePort(4723);

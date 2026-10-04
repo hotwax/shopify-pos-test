@@ -5,6 +5,7 @@ import { isAbsolute, join } from 'node:path';
 import { browser } from '@wdio/globals';
 import type { DeviceProfile } from '../../shared/contracts.ts';
 import { buildCapabilities } from '../../config/device.ts';
+import { appiumLogFiltersFile } from './log-filters.ts';
 
 export interface OwnedProcess {
   pid: number;
@@ -220,6 +221,6 @@ export function makeWdioConfig(input: WdioConfigInput): WebdriverIO.Config {
         await writeFile(join(input.artifactDir, 'reset.json'), JSON.stringify({ ...outcome, durationMs: Date.now() - startedAt }));
       } catch { /* the reset record is evidence, never the verdict */ }
     },
-    ...(input.sharedAppium ? {} : { services: [['appium', { args: { address: '127.0.0.1', port: input.port, logLevel: 'info' }, logPath: input.artifactDir }]] }),
+    ...(input.sharedAppium ? {} : { services: [['appium', { args: { address: '127.0.0.1', port: input.port, logLevel: 'info', logFilters: appiumLogFiltersFile }, logPath: input.artifactDir }]] }),
   };
 }

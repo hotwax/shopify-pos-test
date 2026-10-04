@@ -4,10 +4,12 @@ import { browser } from '@wdio/globals';
 import { pos } from '../screens/pos.ts';
 import * as s from '../screens/pos.selectors.ts';
 import { readScenarioRequest } from '../support/input.ts';
+import { posPin } from '../screens/pos-pin.ts';
 
 describe('Shopify POS custom sale surface inspection', () => {
   it('opens the observed Add custom sale tile and captures it without adding a line', async () => {
     const request = await readScenarioRequest();
+    await posPin.unlockIfLocked();
     if (request.scriptId !== 'pos.inspect-custom-sale' || request.assertionMode !== 'pos') {
       throw new Error('This native spec is bound to the pos.inspect-custom-sale read-only request.');
     }

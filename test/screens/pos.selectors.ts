@@ -176,3 +176,7 @@ export function posLiteral(label: string): string {
   if (/["\\]/.test(label)) throw new Error(`A POS label containing a quote or backslash cannot be matched safely: ${label}`);
   return label;
 }
+
+export const pinScreen = '~Screen.PinVerification';
+export const pinDigitButtonPrefix = 'Component.PINPad.KeyPad.DigitButton.';
+export const pinSubmitButton = '~Component.PINPad.KeyPad.SubmitButton';

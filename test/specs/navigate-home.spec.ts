@@ -2,11 +2,13 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { browser } from '@wdio/globals';
 import { readScenarioRequest } from '../support/input.ts';
+import { posPin } from '../screens/pos-pin.ts';
 import * as s from '../screens/pos.selectors.ts';
 
 describe('Shopify POS Home navigation utility', () => {
   it('returns to Home through the observed native tab without resetting POS', async () => {
     const request = await readScenarioRequest();
+    await posPin.unlockIfLocked();
     if (request.scriptId !== 'pos.navigate-home' || request.assertionMode !== 'pos') {
       throw new Error('This native spec is bound to the pos.navigate-home read-only request.');
     }

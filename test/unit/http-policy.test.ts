@@ -7,6 +7,7 @@ import { createApiServer } from '../../server/app.ts';
 import { OmsClient } from '../../core/oms/client.ts';
 import { createCoordinator } from '../../core/runner/coordinator.ts';
 import type { OmsService } from '../../core/oms/types.ts';
+import { setCredentialKeyForTesting } from '../../core/storage/credential-key.ts';
 
 async function withServer(run: (url: string) => Promise<void>, root = process.cwd()): Promise<void> {
   const server = await createApiServer({ port: 0, mode: 'test', root });
@@ -288,4 +289,35 @@ test('lists only safe-named run artifacts, serves screenshots as PNGs, and block
     const slashName = await fetch(`${url}/api/runs/${runId}/artifacts/nested/inner.png`, { headers });
     assert.equal(slashName.status, 404);
   }, root);
+});
+
+test('saves a POS staff PIN per iPad and never returns it to the browser', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ios-testing-http-pos-pin-'));
+  setCredentialKeyForTesting(Buffer.alloc(32, 5));
+  const udid = '00008103-0000000000000001';
+  await withServer(async url => {
+    const port = new URL(url).port;
+    const { sessionToken } = await (await fetch(`${url}/api/health`, { headers: { Host: `127.0.0.1:${port}` } })).json() as { sessionToken: string };
+    const headers = { Host: `127.0.0.1:${port}`, 'X-Local-Session': sessionToken, 'Content-Type': 'application/json', Origin: `http://127.0.0.1:${port}` };
+
+    const empty = await fetch(`${url}/api/setup/pos-pin?udid=${udid}`, { headers });
+    assert.deepEqual(await empty.json(), { saved: null });
+
+    const rejected = await fetch(`${url}/api/setup/pos-pin`, { method: 'POST', headers, body: JSON.stringify({ udid, pin: '12' }) });
+    assert.equal(rejected.status, 400);
+
+    const saved = await fetch(`${url}/api/setup/pos-pin`, { method: 'POST', headers, body: JSON.stringify({ udid, pin: '482913' }) });
+    assert.equal(saved.status, 200);
+    const savedText = await saved.text();
+    assert.doesNotMatch(savedText, /482913/);
+
+    const listed = await (await fetch(`${url}/api/setup/pos-pin?udid=${udid}`, { headers })).text();
+    assert.match(listed, new RegExp(udid));
+    assert.doesNotMatch(listed, /482913/);
+
+    const forgotten = await fetch(`${url}/api/setup/pos-pin/forget`, { method: 'POST', headers, body: JSON.stringify({ udid }) });
+    assert.deepEqual(await forgotten.json(), { removed: true });
+    assert.deepEqual(await (await fetch(`${url}/api/setup/pos-pin?udid=${udid}`, { headers })).json(), { saved: null });
+  }, root);
+  setCredentialKeyForTesting(undefined);
 });

@@ -1,6 +1,7 @@
 import { mkdir, rename, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { findAvailablePort, spawn, type OwnedProcess } from './process.ts';
+import { appiumLogFiltersFile } from './log-filters.ts';
 
 /**
  * One Appium server for the life of the local host, instead of one per run.
@@ -46,6 +47,7 @@ export function createAppiumServerHost(root: string, options: { preferredPort?: 
       resolve(root, 'node_modules/appium/build/lib/main.js'), 'server',
       '--address', '127.0.0.1', '--port', String(port),
       '--log', logPath, '--log-level', 'info', '--log-timestamp', '--log-no-colors',
+      '--log-filters', appiumLogFiltersFile,
     ], { cwd: resolve(root), env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '' } });
     const deadline = Date.now() + (options.startupTimeoutMs ?? 30_000);
     while (Date.now() < deadline) {

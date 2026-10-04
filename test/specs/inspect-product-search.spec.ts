@@ -4,10 +4,12 @@ import { browser } from '@wdio/globals';
 import { pos } from '../screens/pos.ts';
 import * as s from '../screens/pos.selectors.ts';
 import { readScenarioRequest } from '../support/input.ts';
+import { posPin } from '../screens/pos-pin.ts';
 
 describe('Shopify POS product search inspection', () => {
   it('opens the observed search control without selecting a product', async () => {
     const request = await readScenarioRequest();
+    await posPin.unlockIfLocked();
     if (request.scriptId !== 'pos.inspect-product-search' || request.assertionMode !== 'pos') {
       throw new Error('This native spec is bound to the pos.inspect-product-search read-only request.');
     }

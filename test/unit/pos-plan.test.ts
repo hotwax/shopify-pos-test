@@ -14,6 +14,8 @@ const common = {
   returnQuantity: '1',
   restock: true,
   replacementVariantGid: 'gid://shopify/ProductVariant/2',
+  replacementProductGid: 'gid://shopify/Product/10256354705573',
+  replacementSearch: 'Replacement product',
   replacementQuantity: '1',
   direction: 'collect' as const,
   note: 'nightly POS fixture',
@@ -26,11 +28,12 @@ test('builds exact create, return, and exchange parameters from the POS form', (
     lines: [{ variantGid: common.variantGid, productGid: common.productGid, search: common.search, quantity: 1, variantSelection: 'unknown' }], currency: 'USD', note: common.note,
   });
   assert.deepEqual(buildMutationParameters({ ...common, scenario: 'pos.return-cash-order' }), {
-    orderGid: common.orderGid, orderReference: common.orderReference, lines: [{ lineGid: common.lineGid, quantity: 1, restock: true }],
+    orderGid: common.orderGid, orderReference: common.orderReference, lines: [{ lineGid: common.lineGid, quantity: 1, restock: true, reason: 'UNKNOWN' }], refundMethod: 'cash',
   });
   assert.deepEqual(buildMutationParameters({ ...common, scenario: 'pos.exchange-cash-order' }), {
-    orderGid: common.orderGid, orderReference: common.orderReference, lines: [{ lineGid: common.lineGid, quantity: 1, restock: true }],
-    replacements: [{ variantGid: common.replacementVariantGid, quantity: 1 }], direction: 'collect', maximumDifference: { amount: '20.00', currency: 'USD' },
+    orderGid: common.orderGid, orderReference: common.orderReference, lines: [{ lineGid: common.lineGid, quantity: 1, restock: true, reason: 'UNKNOWN' }], refundMethod: 'cash',
+    replacements: [{ variantGid: common.replacementVariantGid, productGid: common.replacementProductGid, search: common.replacementSearch, quantity: 1, variantSelection: 'unknown' }],
+    direction: 'collect', maximumDifference: { amount: '20.00', currency: 'USD' }, collectMethod: 'cash',
   });
 });
 
@@ -38,6 +41,7 @@ test('rejects malformed or ineligible operator input before a run request is bui
   assert.throws(() => buildMutationParameters({ ...common, scenario: 'pos.create-cash-order', variantGid: 'gid://shopify/Product/1' }), /variant/i);
   assert.throws(() => buildMutationParameters({ ...common, scenario: 'pos.return-cash-order', returnQuantity: '3' }), /eligible|quantity/i);
   assert.throws(() => buildMutationParameters({ ...common, scenario: 'pos.exchange-cash-order', direction: 'refund', maximumDifference: 'bad' }), /money|amount|maximum/i);
+  assert.throws(() => buildMutationParameters({ ...common, scenario: 'pos.exchange-cash-order', replacementProductGid: '' }), /replacement product/i);
 });
 
 test('builds the exact frozen target context used by the runner', () => {

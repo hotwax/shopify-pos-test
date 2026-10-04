@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { browser } from '@wdio/globals';
 import * as s from '../screens/pos.selectors.ts';
 import { readScenarioRequest } from '../support/input.ts';
+import { posPin } from '../screens/pos-pin.ts';
 
 /**
  * Discovery only. Backs out of any open cash/payment surface, then opens the
@@ -12,6 +13,7 @@ import { readScenarioRequest } from '../support/input.ts';
 describe('Shopify POS cart actions inspection', () => {
   it('backs out of checkout and captures the cart More actions menu', async () => {
     const request = await readScenarioRequest();
+    await posPin.unlockIfLocked();
     if (request.scriptId !== 'pos.inspect-cart-actions' || request.assertionMode !== 'pos') {
       throw new Error('This native spec is bound to the pos.inspect-cart-actions request.');
     }

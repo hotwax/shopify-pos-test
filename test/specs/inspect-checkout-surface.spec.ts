@@ -4,6 +4,7 @@ import { browser } from '@wdio/globals';
 import { pos } from '../screens/pos.ts';
 import * as s from '../screens/pos.selectors.ts';
 import { readScenarioRequest } from '../support/input.ts';
+import { posPin } from '../screens/pos-pin.ts';
 
 /**
  * Discovery only. Adds one bounded custom-sale line so the checkout and tender
@@ -14,6 +15,7 @@ import { readScenarioRequest } from '../support/input.ts';
 describe('Shopify POS checkout surface inspection', () => {
   it('adds one $1.00 custom sale line and captures the checkout surface without paying', async () => {
     const request = await readScenarioRequest();
+    await posPin.unlockIfLocked();
     if (request.scriptId !== 'pos.inspect-checkout-surface' || request.assertionMode !== 'pos') {
       throw new Error('This native spec is bound to the pos.inspect-checkout-surface request.');
     }

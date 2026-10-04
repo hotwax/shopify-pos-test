@@ -14,6 +14,7 @@ import { sendJson, sendText } from './routes.ts';
 import { serveStatic } from './static.ts';
 import { isValidTargetContext } from '../core/safety/environment.ts';
 import { forgetOmsCredential, listSavedOmsConnections, readOmsCredential, saveOmsCredential } from '../core/storage/credentials.ts';
+import { forgetPosPin, savePosPin, savedPosPin } from '../core/storage/pos-pin.ts';
 import { validateRunRequestAgainstCatalog } from '../core/catalog/validate.ts';
 import { registry } from '../test/scenarios/registry.ts';
 
@@ -381,6 +382,25 @@ export async function createApiServer(options: ApiServerOptions): Promise<Server
           await saveDeviceProfile(options.root, body);
           sendJson(response, 200, { ok: true, profiles: await loadDeviceProfiles(options.root) });
         } catch (error) { sendJson(response, 400, { ok: false, error: error instanceof Error ? error.message : 'Profile could not be saved.' }); }
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/api/setup/pos-pin') {
+        try { sendJson(response, 200, { saved: await savedPosPin(options.root, url.searchParams.get('udid') ?? '') }); }
+        catch (error) { sendJson(response, 400, { ok: false, error: error instanceof Error ? error.message : 'The saved PIN could not be read.' }); }
+        return;
+      }
+      if (request.method === 'POST' && url.pathname === '/api/setup/pos-pin') {
+        const body = await readBody(request) as Record<string, unknown>;
+        if (!boundedText(body.udid, 64) || !boundedText(body.pin, 16)) { sendJson(response, 400, { ok: false, error: 'An iPad UDID and a PIN are required.' }); return; }
+        try { sendJson(response, 200, { saved: await savePosPin(options.root, body.udid, body.pin) }); }
+        catch (error) { sendJson(response, 400, { ok: false, error: error instanceof Error ? error.message : 'The PIN could not be saved.' }); }
+        return;
+      }
+      if (request.method === 'POST' && url.pathname === '/api/setup/pos-pin/forget') {
+        const body = await readBody(request) as Record<string, unknown>;
+        if (!boundedText(body.udid, 64)) { sendJson(response, 400, { ok: false, error: 'An iPad UDID is required.' }); return; }
+        try { sendJson(response, 200, { removed: await forgetPosPin(options.root, body.udid) }); }
+        catch (error) { sendJson(response, 400, { ok: false, error: error instanceof Error ? error.message : 'The PIN could not be removed.' }); }
         return;
       }
       if (request.method === 'GET' && url.pathname === '/api/catalog') {

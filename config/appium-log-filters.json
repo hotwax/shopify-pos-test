@@ -1,0 +1,1 @@
+[{ "pattern": "DigitButton\\.[0-9]", "replacer": "DigitButton.*" }]

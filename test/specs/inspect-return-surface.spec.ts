@@ -4,10 +4,12 @@ import { browser } from '@wdio/globals';
 import { pos } from '../screens/pos.ts';
 import * as s from '../screens/pos.selectors.ts';
 import { readScenarioRequest } from '../support/input.ts';
+import { posPin } from '../screens/pos-pin.ts';
 
 describe('Shopify POS return and exchange surface inspection', () => {
   it('opens the observed non-committing surface without selecting a line or tender', async () => {
     const request = await readScenarioRequest();
+    await posPin.unlockIfLocked();
     if (request.scriptId !== 'pos.inspect-return-surface' || request.assertionMode !== 'pos') {
       throw new Error('This native spec is bound to the pos.inspect-return-surface read-only request.');
     }

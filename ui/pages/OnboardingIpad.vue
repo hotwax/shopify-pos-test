@@ -14,7 +14,6 @@
     <ion-content class="ion-padding">
       <ion-grid fixed>
         <ion-row><ion-col size="12" size-lg="9">
-          <!-- Development Preview Switcher -->
           <ion-item lines="none" class="preview-item">
             <ion-label><ion-note>Preview state:</ion-note></ion-label>
             <ion-select v-model="previewMode" interface="popover" @ionChange="applyPreview">
@@ -63,7 +62,7 @@
                   <ion-select-option v-for="device in devices" :key="device.udid" :value="device.udid">{{ device.name }} · {{ device.model }} · iPadOS {{ device.os }}</ion-select-option>
                 </ion-select>
               </ion-item>
-              <ion-note v-if="!devices.length" color="warning"><p>No iPad is listed yet. Connect it by USB-C, unlock it, trust this Mac, then select Find connected iPads.</p></ion-note>
+              <ion-note v-if="!devices.length && !error" color="warning"><p>No iPad is listed yet. Connect it by USB-C, unlock it, trust this Mac, then select Find connected iPads.</p></ion-note>
 
               <div class="button-row">
                 <ion-button fill="outline" @click="handleDiscover" :disabled="discovering">{{ discovering ? 'Looking for iPads…' : 'Find connected iPads' }}</ion-button>
@@ -105,7 +104,30 @@
             </ion-card-content>
           </ion-card>
 
-          <!-- 2. Check the Mac and iPad -->
+          <ion-card v-if="profileSaved">
+            <ion-card-header>
+              <div class="card-heading">
+                <div><ion-card-title>Shopify POS staff PIN</ion-card-title><ion-card-subtitle>Optional. Lets test runs unlock Shopify POS by themselves.</ion-card-subtitle></div>
+                <ion-badge :color="posPin ? 'success' : 'medium'">{{ posPin ? 'Saved' : 'Not saved' }}</ion-badge>
+              </div>
+            </ion-card-header>
+            <ion-card-content>
+              <p>When Shopify POS asks for a staff PIN during a test run, the run types this PIN and carries on. It does not sign POS back in if the whole store is signed out.</p>
+              <p v-if="posPin">A PIN is saved for this iPad. It was saved on {{ new Date(posPin.updatedAt).toLocaleString() }}.</p>
+              <ion-item>
+                <ion-label position="stacked">{{ posPin ? 'New PIN' : 'PIN' }}</ion-label>
+                <ion-input v-model="posPinInput" type="password" inputmode="numeric" maxlength="6" autocomplete="off" aria-label="Shopify POS staff PIN" placeholder="4 to 6 digits" />
+              </ion-item>
+              <div class="button-row">
+                <ion-button @click="handleSavePosPin" :disabled="posPinBusy || !posPinInput">{{ posPin ? 'Replace PIN' : 'Save PIN' }}</ion-button>
+                <ion-button v-if="posPin" fill="outline" color="danger" @click="handleForgetPosPin" :disabled="posPinBusy">Delete PIN</ion-button>
+              </div>
+              <ion-note color="medium"><p>The PIN is encrypted on this Mac with a key in your macOS Keychain. The app never shows it again, and it is never put in Git or in run logs.</p></ion-note>
+              <ion-text color="success" v-if="posPinMessage"><p role="status">{{ posPinMessage }}</p></ion-text>
+              <ion-text color="danger" v-if="posPinError"><p role="alert">{{ posPinError }}</p></ion-text>
+            </ion-card-content>
+          </ion-card>
+
           <ion-card>
             <ion-card-header>
               <div class="card-heading">
@@ -143,6 +165,8 @@
                       </span>
                       <span v-else>Next: {{ item.actions[0] }}</span>
                     </p>
+                    <p v-if="item.command && item.state !== 'ready'"><code>{{ item.command }}</code></p>
+                    <p v-if="item.link && item.state !== 'ready'"><a :href="item.link" target="_blank" rel="noopener">Download Apple's intermediate certificate</a></p>
                   </ion-label>
                   <ion-badge slot="end" :color="badgeColor(item)">{{ checkStateLabel(item) }}</ion-badge>
                 </ion-item>
@@ -150,7 +174,6 @@
             </ion-card-content>
           </ion-card>
 
-          <!-- 3. First-run test (Verify live session & permissions) -->
           <ion-card class="first-run-card" v-if="checksReady">
             <ion-card-header>
               <div class="card-heading">
@@ -164,7 +187,6 @@
               </div>
             </ion-card-header>
             <ion-card-content>
-              <!-- Idle State -->
               <div v-if="firstRunStatus === 'idle'">
                 <p>
                   Keep the iPad unlocked with Auto-Lock off, and leave Shopify POS on its Home screen. When you start this read-only test, Apple may prompt for permissions:
@@ -199,7 +221,6 @@
                 </ion-note>
               </div>
 
-              <!-- Running / Progress State -->
               <div v-if="['starting', 'running'].includes(firstRunStatus)">
                 <ion-list :inset="true" class="ion-no-margin ion-margin-bottom">
                   <ion-item lines="none">
@@ -217,7 +238,6 @@
                 <ion-progress-bar type="indeterminate" color="primary" />
               </div>
 
-              <!-- Passed State -->
               <ion-list v-if="firstRunStatus === 'passed'" class="checks-list ion-margin-bottom">
                 <ion-item class="check-item" lines="none">
                   <ion-icon slot="start" :icon="checkmarkCircleOutline" color="success" />
@@ -229,7 +249,6 @@
                 </ion-item>
               </ion-list>
 
-              <!-- Failed / Trust-Required State -->
               <div v-if="firstRunStatus === 'failed'">
                 <ion-list class="checks-list ion-margin-bottom">
                   <ion-item class="check-item" lines="none">
@@ -242,7 +261,6 @@
                   </ion-item>
                 </ion-list>
 
-                <!-- Step-by-step iPad Trust Guide using native ion-list & ion-items -->
                 <ion-list :inset="true" v-if="isTrustFailure" class="ion-no-margin ion-margin-bottom">
                   <ion-list-header>
                     <ion-icon :icon="shieldCheckmarkOutline" color="primary" class="ion-margin-end" />
@@ -346,7 +364,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   IonAccordion, IonAccordionGroup, IonBackButton, IonBadge, IonButton, IonButtons,
   IonCard, IonCardContent, IonCardHeader, IonCardSubtitle, IonCardTitle, IonChip,
@@ -360,10 +378,10 @@ import {
   phonePortraitOutline, playCircleOutline, refreshOutline, settingsOutline,
   shieldCheckmarkOutline,
 } from 'ionicons/icons';
-import type { DeviceProfile, SetupCheck, SetupDefaults } from '../../shared/contracts.ts';
+import type { DeviceProfile, SavedPosPin, SetupCheck, SetupDefaults } from '../../shared/contracts.ts';
 import {
-  checkSetup, getHealth, getProfiles, getRun, getSetupDefaults, getSetupDevices,
-  saveProfile, startRun,
+  checkSetup, forgetPosPin, getHealth, getPosPin, getProfiles, getRun, getSetupDefaults, getSetupDevices,
+  savePosPin, saveProfile, startRun,
 } from '../api.ts';
 
 type SetupDevice = { udid: string; name: string; model: string; os: string };
@@ -381,6 +399,11 @@ const error = ref('');
 const savedMessage = ref('');
 const editingExisting = ref(false);
 const previewMode = ref('live');
+const posPin = ref<SavedPosPin | null>(null);
+const posPinInput = ref('');
+const posPinBusy = ref(false);
+const posPinMessage = ref('');
+const posPinError = ref('');
 
 const firstRunStatus = ref<'idle' | 'starting' | 'running' | 'passed' | 'failed'>('idle');
 const firstRunId = ref('');
@@ -540,6 +563,35 @@ async function handleCheck(): Promise<void> {
   } else {
     applyPreview();
   }
+}
+
+async function loadPosPin(udid: string): Promise<void> {
+  posPin.value = null; posPinMessage.value = ''; posPinError.value = '';
+  if (!udid) return;
+  try { posPin.value = (await getPosPin(udid)).saved; }
+  catch (cause) { posPinError.value = cause instanceof Error ? cause.message : 'The saved PIN could not be read.'; }
+}
+
+watch(() => (profileSaved.value && previewMode.value === 'live' ? profile.value.udid : ''), udid => { void loadPosPin(udid); }, { immediate: true });
+
+async function handleSavePosPin(): Promise<void> {
+  posPinBusy.value = true; posPinMessage.value = ''; posPinError.value = '';
+  try {
+    posPin.value = (await savePosPin(profile.value.udid, posPinInput.value.trim())).saved;
+    posPinInput.value = '';
+    posPinMessage.value = 'PIN saved for this iPad.';
+  } catch (cause) { posPinError.value = cause instanceof Error ? cause.message : 'The PIN could not be saved.'; }
+  finally { posPinBusy.value = false; }
+}
+
+async function handleForgetPosPin(): Promise<void> {
+  posPinBusy.value = true; posPinMessage.value = ''; posPinError.value = '';
+  try {
+    await forgetPosPin(profile.value.udid);
+    posPin.value = null;
+    posPinMessage.value = 'PIN deleted.';
+  } catch (cause) { posPinError.value = cause instanceof Error ? cause.message : 'The PIN could not be deleted.'; }
+  finally { posPinBusy.value = false; }
 }
 
 async function handleDiscover(): Promise<void> {
