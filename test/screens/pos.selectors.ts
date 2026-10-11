@@ -34,6 +34,12 @@ export const acceptCashCancelButton = '~Screen.AcceptCash.CancelButton';
 // are never touched.
 export const checkoutCompleteScreen = '~Screen.CheckoutComplete';
 export const checkoutCompleteDoneButton = '~Screen.CheckoutComplete.DoneButton';
+// Even-exchange receipt observed on Demo HC#2754 (run-1791005182500-5b627ebe).
+// It retains Home/Cart in the tree and exposes these two receipt actions;
+// its Done button has no Screen.CheckoutComplete identifier.
+export const receiptOptionsEmail = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Screen.ReceiptOptionsScreen.Email" AND visible == 1';
+export const receiptOptionsText = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Screen.ReceiptOptionsScreen.Text" AND visible == 1';
+export const receiptOptionsDone = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Done" AND visible == 1';
 export const cartMoreActionsButton = '~Screen.Cart.MoreActionsButton';
 export const moreActionsSaveCart = '~Screen.MoreActions.SaveCart';
 // Product search (POS 11.14.0). Result rows carry the numeric Shopify product
@@ -89,6 +95,9 @@ export const settingsMenu = '-ios predicate string:type == "XCUIElementTypeOther
 export const settingsScreen = '~Screen.Settings';
 export const settingsLocationItem = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Screen.Settings.LocationsItem"';
 export const ordersScreen = '~Screen.OrdersScreen';
+export const shippingOrdersNav = '~Screen.OrdersScreen.NavListContent.Item.FulfillmentOrdersWorkflow';
+export const prepareForShippingTab = '~Screen.ShipFromStore.Sections.PrepareItems';
+export const uiExtensionModal = '~Screen.UIExtensionModal';
 export const ordersList = '~Screen.OrdersList';
 // Observed in the POS Orders accessibility tree as the exact order-search
 // field. Scope this selector to Screen.OrdersScreen; the same component name
@@ -184,6 +193,8 @@ export const anySharedCartLine = '-ios predicate string:name BEGINSWITH "SharedC
 export const refundMethodTitle = '-ios predicate string:type == "XCUIElementTypeStaticText" AND label == "Select refund method"';
 export const refundMethodCash = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Cash, Original payment"';
 export const refundMethodGiftCard = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Gift card"';
+// Observed enabled/hittable on Demo HC#2757, run-1791041944827-8d4356d0.
+export const refundMethodStoreCredit = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Store credit" AND label == "Store credit" AND visible == 1';
 export const refundMethodSplit = '-ios predicate string:type == "XCUIElementTypeButton" AND name == "Split refund"';
 // The chooser leaves with the action bar's primary button, which is labelled
 // Back here and Close on the order detail; both share the component name, so

@@ -1,4 +1,6 @@
 import { browser } from '@wdio/globals';
+import { join } from 'node:path';
+import { writeFile } from 'node:fs/promises';
 import type { OmsShopifyOrderDetail } from '../../shared/contracts.ts';
 import type { PosContextEvidence } from '../../core/safety/environment.ts';
 import type { ObservedExchangeSummary, ObservedReturnSummary } from '../../core/safety/transaction-flow.ts';
@@ -9,9 +11,10 @@ import { pos } from '../screens/pos.ts';
 import { exchangeCartTarget, posCart, type CartLineRequest } from '../screens/pos-cart.ts';
 import { posReturn, posItemLabel, type CartTotal } from '../screens/pos-return.ts';
 import * as s from '../screens/pos.selectors.ts';
-import { isPresent, waitForPresent } from '../screens/wait.ts';
+import { isPresent, waitForPresent, waitForGone } from '../screens/wait.ts';
 import type { PosContextReader } from '../support/pos-context.ts';
 import { reportProgress } from '../support/progress.ts';
+import { assertSelectedCustomer } from '../screens/pos-customer.ts';
 
 /**
  * Drives one Shopify POS return or exchange from an approved plan.
@@ -55,6 +58,7 @@ function moneyOf(total: CartTotal, currency: string): { amount: string; currency
 const refundMethodSelectors: Record<RefundMethod, { selector: string; what: string }> = {
   cash: { selector: s.refundMethodCash, what: 'Cash, Original payment' },
   'gift-card': { selector: s.refundMethodGiftCard, what: 'Gift card' },
+  'store-credit': { selector: s.refundMethodStoreCredit, what: 'Store credit' },
 };
 
 /**
@@ -101,27 +105,42 @@ async function readObservedLines(labels: Map<string, string>): Promise<ObservedR
 }
 
 /** Taps the approved refund method and waits for POS to reach its completed state. */
-async function takeRefund(method: RefundMethod): Promise<void> {
+async function takeRefund(method: RefundMethod, beforeCommit?: () => Promise<void>): Promise<void> {
   const choice = refundMethodSelectors[method];
   await waitForPresent(choice.selector, { timeout: 20_000, timeoutMsg: `Shopify POS did not offer the "${choice.what}" refund method.` });
   const control = browser.$(choice.selector);
   if (!await control.isEnabled()) throw new Error(`Shopify POS has disabled the "${choice.what}" refund method for this return.`);
   await reportProgress(`Taking the refund as "${choice.what}"`);
+  if (beforeCommit) await beforeCommit();
   await control.click();
+  if (method === 'store-credit' && process.env.RUN_ARTIFACT_DIR) {
+    await browser.saveScreenshot(join(process.env.RUN_ARTIFACT_DIR, 'store-credit-selected.png'));
+    await writeFile(join(process.env.RUN_ARTIFACT_DIR, 'store-credit-selected.xml'), await browser.getPageSource());
+  }
   // What this tap commits is build-specific: on the observed build the cash
   // method may finish the refund outright or lead to one more confirmation.
   // Either way the attempt is already in the ledger, so the run waits for a
   // completed checkout and treats anything else as needing reconciliation.
-  await browser.waitUntil(async () => isPresent(s.checkoutCompleteScreen), {
+  await browser.waitUntil(async () => await isPresent(s.checkoutCompleteScreen) || (await isPresent(s.receiptOptionsEmail) && await isPresent(s.receiptOptionsText)), {
     timeout: 90_000,
     timeoutMsg: 'Shopify POS did not reach its completed state after the refund method was taken. The refund may or may not have been issued; reconcile this run against Shopify.',
   });
-  const done = browser.$(s.checkoutCompleteDoneButton);
-  if (await done.isExisting() && await done.isEnabled()) await done.click();
+  if (process.env.RUN_ARTIFACT_DIR) await browser.saveScreenshot(join(process.env.RUN_ARTIFACT_DIR, 'return-receipt.png'));
+  if (await isPresent(s.checkoutCompleteScreen)) {
+    const done = browser.$(s.checkoutCompleteDoneButton);
+    if (await done.isExisting() && await done.isEnabled()) await done.click();
+  } else {
+    const done = browser.$(s.receiptOptionsDone);
+    if (!await done.isEnabled()) throw new Error('The completed return receipt does not offer Done.');
+    const rect = await browser.getElementRect((await done.getElement()).elementId);
+    await browser.execute('mobile: tap', { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) });
+    await waitForGone(s.receiptOptionsEmail, { timeout: 20_000, timeoutMsg: 'The completed return receipt did not close after Done.' });
+  }
 }
 
 export function createReturnDriver(parameters: ReturnParameters, contextReader: PosContextReader): ReturnOrderDriver {
   let currency = 'USD';
+  let creditCustomerName: string | null = null;
   let observedLines: ObservedReturnSummary['lines'] = [];
   let observedTotal: CartTotal | null = null;
 
@@ -130,10 +149,15 @@ export function createReturnDriver(parameters: ReturnParameters, contextReader: 
 
     async prepareReturn(plan: ReturnParameters, source: OmsShopifyOrderDetail): Promise<void> {
       currency = source.total?.currency ?? 'USD';
+      if (plan.refundMethod === 'store-credit') {
+        creditCustomerName = [source.customer?.firstName, source.customer?.lastName].filter(Boolean).join(' ').trim();
+        if (!creditCustomerName) throw new Error('A store-credit return requires the source customer name to verify the native cart.');
+      }
       const labels = buildLineLabels(source, plan.lines.map(line => line.lineGid));
       await openAndConfigure(plan, labels);
       observedLines = await readObservedLines(labels);
       await posReturn.finishSelection();
+      if (creditCustomerName) await assertSelectedCustomer(creditCustomerName);
     },
 
     async selectCash(): Promise<void> {
@@ -151,10 +175,11 @@ export function createReturnDriver(parameters: ReturnParameters, contextReader: 
     async readSummary(): Promise<ObservedReturnSummary> {
       if (!observedTotal) throw new Error('The POS return total has not been read yet.');
       if (!await posReturn.isRefundMethodOpen()) throw new Error('The POS refund-method chooser is no longer open, so the tender cannot be confirmed before commit.');
+      if (creditCustomerName) await assertSelectedCustomer(creditCustomerName);
       return { lines: observedLines, refund: moneyOf(observedTotal, currency), tender: parameters.refundMethod };
     },
 
-    commitCash: () => takeRefund(parameters.refundMethod),
+    commitCash: beforeCommit => takeRefund(parameters.refundMethod, beforeCommit),
   };
 }
 
@@ -203,6 +228,9 @@ export function createExchangeDriver(parameters: ExchangeParameters, contextRead
       if (observedTotal.direction !== parameters.direction) {
         throw new Error(`The approved exchange direction is "${parameters.direction}" but POS reads "${observedTotal.label}".`);
       }
+      if (observedTotal.direction === 'collect') {
+        throw new Error('Collect exchanges need a verified cash-tender path inside the exchange cart; no committing action has been attempted.');
+      }
       if (observedTotal.direction === 'refund') {
         await posReturn.openRefundMethods();
         const choice = refundMethodSelectors[parameters.refundMethod];
@@ -226,10 +254,35 @@ export function createExchangeDriver(parameters: ExchangeParameters, contextRead
       };
     },
 
-    async commitCash(): Promise<void> {
+    async commitCash(beforeCommit: () => Promise<void>): Promise<void> {
       if (!observedTotal) throw new Error('The POS exchange total has not been read yet.');
-      if (observedTotal.direction === 'refund') return takeRefund(parameters.refundMethod);
-      throw new Error('Committing a collect or even exchange is not implemented yet; only a net-refund exchange can be completed by this run.');
+      if (observedTotal.direction === 'refund') return takeRefund(parameters.refundMethod, beforeCommit);
+      if (observedTotal.direction !== 'even') throw new Error('Collect exchanges are not implemented; no committing action has been attempted.');
+      // Observed on Demo HC#2754, run-1791003682392-c67edfcd: this
+      // existing cart control is labelled Complete exchange for a zero net.
+      const control = browser.$(s.checkoutButton);
+      const current = await posReturn.readCartTotal();
+      if (current.direction !== 'even' || current.cents !== 0 || !await control.isDisplayed() || !await control.isEnabled()) {
+        throw new Error('The final even-exchange control changed or became unavailable; no committing action has been attempted.');
+      }
+      await reportProgress('Completing the approved even exchange ($0.00)');
+      await beforeCommit();
+      await control.click();
+      await browser.waitUntil(async () => await isPresent(s.checkoutCompleteScreen) ||
+        (await isPresent(s.receiptOptionsEmail) && await isPresent(s.receiptOptionsText)), {
+        timeout: 90_000,
+        timeoutMsg: 'Shopify POS did not reach its completed state after Complete exchange; reconcile the source order before retrying.',
+      });
+      if (process.env.RUN_ARTIFACT_DIR) await browser.saveScreenshot(join(process.env.RUN_ARTIFACT_DIR, 'exchange-receipt.png'));
+      if (await isPresent(s.checkoutCompleteScreen)) {
+        const done = browser.$(s.checkoutCompleteDoneButton);
+        if (await done.isExisting() && await done.isEnabled()) await done.click();
+      } else {
+        const done = browser.$(s.receiptOptionsDone);
+        if (!await done.isEnabled()) throw new Error('The completed exchange receipt does not offer Done.');
+        const rect = await browser.getElementRect((await done.getElement()).elementId);
+        await browser.execute('mobile: tap', { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) });
+      }
     },
   };
 }

@@ -26,3 +26,13 @@ test('freezes an exact cash intent and rejects wrong device, tender or empty lin
   assert.throws(() => assertAllowedIntent({ ...intent, udid: 'other-device' }, evidence, [context], Date.parse('2026-09-20T12:01:00Z')));
   assert.throws(() => assertAllowedIntent({ ...intent, tender: 'cash' as 'cash', purchaseLines: [], returnLines: [] }, evidence, [context], Date.parse('2026-09-20T12:01:00Z')));
 });
+
+test('native credit refunds remain bound to Demo and the frozen source customer', () => {
+  const demo = { ...context, omsOrigin: 'https://demo-maarg.hotwax.io', shopDomain: 'hotwax-demo.myshopify.com' };
+  const credit = { ...intent, context: demo, refundMethod: 'store-credit' as const, refundCustomerGid: 'gid://shopify/Customer/5' };
+  const now = Date.parse('2026-09-20T12:01:00Z');
+  assert.doesNotThrow(() => assertAllowedIntent(credit, evidence, [demo], now));
+  assert.throws(() => assertAllowedIntent({ ...credit, context }, evidence, [context], now), /exact approved Demo/i);
+  assert.throws(() => assertAllowedIntent({ ...credit, refundCustomerGid: undefined }, evidence, [demo], now), /frozen source customer/i);
+  assert.notEqual(hashIntent(credit), hashIntent({ ...credit, refundCustomerGid: 'gid://shopify/Customer/6' }));
+});

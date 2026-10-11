@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    {
+      "testOnly": true,
+      "connectionId": "oms-4167c268df724e99b869c4fb760a7553",
+      "omsOrigin": "https://demo-maarg.hotwax.io",
+      "userId": "100051",
+      "connectorShopId": "10010",
+      "shopGid": "gid://shopify/Shop/67452731546",
+      "shopDomain": "hotwax-demo.myshopify.com",
+      "posStoreName": "hotwax-demo",
+      "locationGid": "gid://shopify/Location/75725176986",
+      "posLocationName": "Broadway",
+      "apiVersion": "2026-01"
+    },
+    {
+      "testOnly": true,
+      "connectionId": "oms-4167c268df724e99b869c4fb760a7553",
+      "omsOrigin": "https://demo-maarg.hotwax.io",
+      "userId": "100051",
+      "connectorShopId": "10010",
+      "shopGid": "gid://shopify/Shop/67452731546",
+      "shopDomain": "hotwax-demo.myshopify.com",
+      "posStoreName": "hotwax-demo",
+      "locationGid": "gid://shopify/Location/75725275290",
+      "posLocationName": "Garden City",
+      "apiVersion": "2026-01"
+    },
+    {
+      "testOnly": true,
+      "connectionId": "oms-4167c268df724e99b869c4fb760a7553",
+      "omsOrigin": "https://demo-maarg.hotwax.io",
+      "userId": "100051",
+      "connectorShopId": "10010",
+      "shopGid": "gid://shopify/Shop/67452731546",
+      "shopDomain": "hotwax-demo.myshopify.com",
+      "posStoreName": "hotwax-demo",
+      "locationGid": "gid://shopify/Location/75725209754",
+      "posLocationName": "Brooklyn",
+      "apiVersion": "2026-01"
+    }
+  ]
+}

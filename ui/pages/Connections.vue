@@ -52,6 +52,10 @@
             </div>
           </div>
           <div class="button-row">
+            <ion-button v-for="connection in connections.filter(item => item.state === 'connected' && item.id !== activeConnectionId)"
+              :key="connection.id" fill="outline" @click="loadShops(connection.id)" :disabled="busy">
+              Use {{ connection.label }}
+            </ion-button>
             <ion-button fill="outline" @click="refreshHealth" :disabled="healthLoading">{{ healthLoading ? 'Checking…' : 'Refresh health' }}</ion-button>
             <ion-button fill="clear" color="medium" @click="logout(activeConnectionId)">Log out and switch OMS</ion-button>
           </div>

@@ -51,6 +51,15 @@ export function createWdioWorkerFactory(root: string, options: WorkerFactoryOpti
     const env = {
       ...makeWorkerEnvironment(profile, runId, artifactDir, appiumPort, wdaLocalPort, wdaDerivedDataPath, root, inputFile),
       WDIO_ENTRY: scenario.entry,
+      // Match the CLI's scoped saved-PIN path without passing credentials to
+      // the worker or enabling private input for unrelated scripts.
+      ...(script.id === 'pos.receiving-performance' || script.id === 'pos.navigate-home' ||
+          (script.id === 'pos.inspect-walk' && request.parameters.prepareDemoSession === true) ||
+          (['pos.rehearse-return', 'pos.rehearse-exchange'].includes(script.id) &&
+            request.context?.shopDomain === 'hotwax-demo.myshopify.com' &&
+            request.context?.omsOrigin === 'https://demo-maarg.hotwax.io') ||
+          (scenario.effect !== 'read-only' && request.context?.shopDomain === 'hotwax-demo.myshopify.com')
+        ? { POS_PRIVATE_INPUT: '1' } : {}),
       // Mutation scenarios leave POS on Home with an empty cart when they end,
       // pass or fail. Read-only diagnostics deliberately leave their surface
       // open for the operator to inspect.

@@ -102,3 +102,18 @@ test('an even or collect exchange is not judged on refund evidence it cannot hav
   assert.equal(names.includes('return-lines'), true, 'but the returned lines are still proven');
   assert.equal(names.includes('exchange-lines'), true);
 });
+
+test('native store credit requires its own successful exact-amount refund and source customer', () => {
+  const customer = { gid: 'gid://shopify/Customer/5', firstName: 'Morgan', lastName: 'Avery', email: '', phone: '' };
+  const before = { ...actual, customer };
+  const expected = { ...returnParameters, refundMethod: 'store-credit' as const };
+  const credit = { ...returned, customer, refunds: [{ ...returned.refunds[0]!, transactions: [{ ...returned.refunds[0]!.transactions[0]!, gateway: 'shopify_store_credit' }] }] };
+  const amount = { amount: '9.00', currency: 'USD' };
+  assert.equal(verifyReturnedOrder(before, credit, expected, amount).passed, true);
+  for (const change of [{ gateway: 'gift_card' }, { status: 'PENDING' }, { status: 'FAILURE' }, { kind: 'SALE' }, { amount: { amount: '8.00', currency: 'USD' } }, { amount: { amount: '9.00', currency: 'EUR' } }]) {
+    const changed = { ...credit, refunds: [{ ...credit.refunds[0]!, transactions: [{ ...credit.refunds[0]!.transactions[0]!, ...change }] }] };
+    assert.equal(verifyReturnedOrder(before, changed, expected, amount).passed, false);
+  }
+  assert.equal(verifyReturnedOrder(before, { ...credit, customer: null }, expected, amount).passed, false);
+  assert.equal(verifyReturnedOrder(before, credit, expected).passed, false, 'an unobserved refund amount cannot prove credit acceptance');
+});

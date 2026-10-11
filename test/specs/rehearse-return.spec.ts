@@ -12,6 +12,7 @@ import { createScenarioContext } from '../support/context.ts';
 import { createPosContextReader } from '../support/pos-context.ts';
 import { readScenarioRequest } from '../support/input.ts';
 import { reportProgress } from '../support/progress.ts';
+import { prepareDemoPosSession } from '../support/demo-pos-session.ts';
 import * as s from '../screens/pos.selectors.ts';
 
 /**
@@ -61,6 +62,10 @@ describe('Shopify POS return rehearsal', () => {
     // should not make the next rehearsal fail on the doorstep. The real
     // return and exchange specs keep asserting Home instead, because a
     // mutation run should not quietly tidy a state nobody explained.
+    if (request.context?.shopDomain === 'hotwax-demo.myshopify.com' &&
+        request.context?.omsOrigin === 'https://demo-maarg.hotwax.io') {
+      await prepareDemoPosSession();
+    }
     await posReset.clearCartAndReturnHome();
 
     // Read-only. A rehearsal is still useful against a store no approved
@@ -132,6 +137,10 @@ describe('Shopify POS return rehearsal', () => {
     const total = await posReturn.readCartTotal();
     await reportProgress(`The POS cart reads "${total.label}"`);
     const cartLines = await posReturn.readCartLines();
+    // Keep the cart surface too: newer POS builds can expose store-credit
+    // options here instead of inside the following tender chooser.
+    await browser.saveScreenshot(join(artifactDir, 'return-cart.png'));
+    await writeFile(join(artifactDir, 'return-cart.xml'), await browser.getPageSource());
 
     // The same pre-commit comparison the real return makes, so a rehearsal
     // that passes has proven the plan would survive that gate too.
@@ -145,6 +154,7 @@ describe('Shopify POS return rehearsal', () => {
     }
 
     let refundMethodsOffered: string[] = [];
+    const observedRefundControls: { name: string; label: string; enabled: boolean; hittable: boolean }[] = [];
     if (total.direction === 'refund') {
       await posReturn.openRefundMethods();
       await browser.saveScreenshot(join(artifactDir, 'refund-methods.png'));
@@ -152,10 +162,20 @@ describe('Shopify POS return rehearsal', () => {
       for (const candidate of [
         { selector: s.refundMethodCash, name: 'Cash, Original payment' },
         { selector: s.refundMethodGiftCard, name: 'Gift card' },
+        { selector: s.refundMethodStoreCredit, name: 'Store credit' },
         { selector: s.refundMethodSplit, name: 'Split refund' },
       ]) {
         const element = (await browser.$$(candidate.selector).getElements())[0];
         if (element) refundMethodsOffered.push(`${candidate.name}${await element.isEnabled() ? '' : ' (disabled)'}`);
+      }
+      // Discover optional tenders from the actual native tree. This is an
+      // observation only; a newly seen label never becomes an approved tap.
+      const controls = await browser.$$('-ios predicate string:type == "XCUIElementTypeButton" AND visible == 1').getElements();
+      for (const control of controls) {
+        const name = (await control.getAttribute('name')) ?? '';
+        const label = (await control.getAttribute('label')) ?? '';
+        if (!/cash|gift\s*card|store\s*credit|split refund/i.test(`${name} ${label}`)) continue;
+        observedRefundControls.push({ name, label, enabled: await control.isEnabled(), hittable: await control.getAttribute('hittable') === 'true' });
       }
       await reportProgress(`POS offers: ${refundMethodsOffered.join(', ') || 'no recognised refund method'}`);
     }
@@ -169,6 +189,7 @@ describe('Shopify POS return rehearsal', () => {
       cart: { label: total.label, direction: total.direction, cents: total.cents, currency: source.total?.currency ?? 'USD', ...cartLines },
       ...(exchange ? { approvedDirection: exchange.direction, replacements: exchange.replacements } : {}),
       refundMethodsOffered,
+      observedRefundControls,
       approvedRefundMethod: parameters.refundMethod,
       committed: false,
     }, null, 2));

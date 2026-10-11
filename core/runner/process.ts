@@ -141,6 +141,10 @@ export function makeWorkerEnvironment(device: DeviceProfile, runId: string, arti
   if (!isAbsolute(artifactDir)) throw new Error('Artifact directory must be absolute.');
   if (!isAbsolute(wdaDerivedDataPath)) throw new Error('WDA DerivedData path must be absolute.');
   if (workerInputFile !== undefined && !isAbsolute(workerInputFile)) throw new Error('Worker input file must be absolute.');
+  // Host-scoped recovery experiment; normal launches keep the reusable build.
+  // Xcode's default build directory matches a known successful native session.
+  const wdaBuildMode = process.env.IOS_TESTING_WDA_BUILD_MODE;
+  if (wdaBuildMode && wdaBuildMode !== 'xcode-default') throw new Error('Unsupported WDA build mode.');
   return {
     PATH: process.env.PATH ?? '',
     HOME: process.env.HOME ?? '',
@@ -153,6 +157,7 @@ export function makeWorkerEnvironment(device: DeviceProfile, runId: string, arti
     APPIUM_PORT: String(port),
     WDA_LOCAL_PORT: String(wdaLocalPort),
     WDA_DERIVED_DATA_PATH: wdaDerivedDataPath,
+    ...(wdaBuildMode ? { WDA_BUILD_MODE: wdaBuildMode } : {}),
     ...(workerInputFile ? { RUN_INPUT_FILE: workerInputFile } : {}),
   };
 }
@@ -177,6 +182,8 @@ export interface WdioConfigInput {
 }
 
 export function makeWdioConfig(input: WdioConfigInput): WebdriverIO.Config {
+  const wdaBuildMode = process.env.WDA_BUILD_MODE;
+  if (wdaBuildMode && wdaBuildMode !== 'xcode-default') throw new Error('Unsupported WDA build mode.');
   const capabilities = buildCapabilities({
     udid: input.device.udid,
     teamId: input.device.teamId,
@@ -189,7 +196,7 @@ export function makeWdioConfig(input: WdioConfigInput): WebdriverIO.Config {
     path: '/',
     specs: [input.entry],
     maxInstances: 1,
-    capabilities: [{ ...capabilities, 'appium:derivedDataPath': input.wdaDerivedDataPath, 'appium:wdaLocalPort': input.wdaLocalPort }],
+    capabilities: [{ ...capabilities, ...(process.env.POS_PRIVATE_INPUT === '1' ? { 'appium:showXcodeLog': false } : {}), ...(wdaBuildMode === 'xcode-default' ? {} : { 'appium:derivedDataPath': input.wdaDerivedDataPath }), 'appium:wdaLocalPort': input.wdaLocalPort }],
     framework: 'mocha',
     // A native POS scenario spends real time waiting on the device. At 120s a
     // slow-but-healthy run was being killed mid-step and reported as "worker
@@ -224,6 +231,6 @@ export function makeWdioConfig(input: WdioConfigInput): WebdriverIO.Config {
         await writeFile(join(input.artifactDir, 'reset.json'), JSON.stringify({ ...outcome, durationMs: Date.now() - startedAt }));
       } catch { /* the reset record is evidence, never the verdict */ }
     },
-    ...(input.sharedAppium ? {} : { services: [['appium', { args: { address: '127.0.0.1', port: input.port, logLevel: 'info' }, logPath: input.artifactDir }]] }),
+    ...(input.sharedAppium ? {} : { services: [['appium', { args: { address: '127.0.0.1', port: input.port, logLevel: process.env.POS_PRIVATE_INPUT === '1' ? 'error' : 'info' }, logPath: input.artifactDir }]] }),
   };
 }

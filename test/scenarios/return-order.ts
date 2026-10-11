@@ -6,6 +6,7 @@ import { isValidTargetContext } from '../../core/safety/environment.ts';
 import { assertReturnPrecommit, type ObservedReturnSummary } from '../../core/safety/transaction-flow.ts';
 import { validateReturn, type ReturnParameters } from '../../core/safety/transaction-inputs.ts';
 import { verifyReturnedOrder } from '../../core/verification/order.ts';
+import { assertWithinMaximum, compareMoney } from '../../core/safety/money.ts';
 import type { ScenarioContext } from '../support/context.ts';
 
 export interface ReturnOrderDriver {
@@ -19,14 +20,14 @@ export interface ReturnOrderDriver {
   prepareReturn(parameters: ReturnParameters, source: OmsShopifyOrderDetail): Promise<void>;
   selectCash(): Promise<void>;
   readSummary(): Promise<ObservedReturnSummary>;
-  commitCash(): Promise<void>;
+  commitCash(beforeCommit: () => Promise<void>): Promise<void>;
 }
 
 export function isCashOrder(order: OmsShopifyOrderDetail): boolean {
   return order.paymentGatewayNames.length === 1 && order.paymentGatewayNames[0]?.trim().toLowerCase() === 'cash';
 }
 
-function createIntent(parameters: ReturnParameters, request: RunRequest, udid: string, currency = 'USD'): TransactionIntent {
+function createIntent(parameters: ReturnParameters, request: RunRequest, udid: string, currency = 'USD', source?: OmsShopifyOrderDetail): TransactionIntent {
   if (!isValidTargetContext(request.context)) throw new Error('A return run requires an exact frozen target context.');
   if (!udid.trim()) throw new Error('The return run has no observed iPad identity.');
   return {
@@ -40,8 +41,9 @@ function createIntent(parameters: ReturnParameters, request: RunRequest, udid: s
     purchaseLines: [],
     tender: 'cash',
     refundMethod: parameters.refundMethod,
+    ...(parameters.refundMethod === 'store-credit' ? { refundCustomerGid: source!.customer!.gid } : {}),
     expectedDirection: 'refund',
-    maximumAbsoluteAmount: { amount: '0', currency },
+    maximumAbsoluteAmount: parameters.refundMethod === 'store-credit' ? source!.total! : { amount: '0', currency },
   };
 }
 
@@ -68,19 +70,25 @@ export async function returnCashOrder(
   if (!isCashOrder(source)) throw new Error('The selected source order is not an exact cash-only Shopify order.');
   const remaining = Object.fromEntries(source.lines.map(line => [line.gid, line.refundableQuantity ?? -1]));
   const parameters = validateReturn(input, remaining);
-  const intent = createIntent(parameters, request, udid, source.total?.currency ?? 'USD');
+  if (parameters.refundMethod === 'store-credit' && (!source.customer?.gid || !source.total || compareMoney(source.total, { amount: '0', currency: source.total.currency }) <= 0)) {
+    throw new Error('A store-credit refund requires an exact existing source customer and a positive source total.');
+  }
+  const intent = createIntent(parameters, request, udid, source.total?.currency ?? 'USD', source);
   const intentHash = hashIntent(intent);
   await context.step('verify-pos-context', async () => context.assertAllowedIntent(intent, await driver.readContextEvidence()));
   await context.step('prepare-return-cart', () => driver.prepareReturn(parameters, source));
   await context.step('select-cash-refund', () => driver.selectCash());
   const observed = await context.step('verify-return-summary', () => driver.readSummary());
   assertReturnPrecommit(observed, parameters);
+  if (parameters.refundMethod === 'store-credit') {
+    if (compareMoney(observed.refund, { amount: '0', currency: observed.refund.currency }) <= 0) throw new Error('The native store-credit refund must be positive.');
+    assertWithinMaximum(observed.refund, intent.maximumAbsoluteAmount);
+  }
   await context.step('verify-pos-context-before-commit', async () => context.assertAllowedIntent(intent, await driver.readContextEvidence()));
-  await context.recordCommitAttempt(intentHash);
-  await context.step('commit-return-cash', () => driver.commitCash());
+  await context.step('commit-return-cash', () => driver.commitCash(() => context.recordCommitAttempt(intentHash)));
   const after = await context.step('read-shopify-return', () => context.readShopifyOrder(parameters.orderGid));
   await context.step('verify-shopify-return', async () => {
-    const verification = verifyReturnedOrder(source, after, parameters);
+    const verification = verifyReturnedOrder(source, after, parameters, observed.refund);
     if (!verification.passed) throw new Error(`Shopify return read-back failed: ${verification.checks.filter(check => !check.passed).map(check => check.name).join(', ')}.`);
   });
   const ids = affectedIds(source, after);

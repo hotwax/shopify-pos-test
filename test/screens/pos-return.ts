@@ -313,8 +313,16 @@ export const posReturn = {
   },
 
   async openExchangeSearch(): Promise<void> {
+    // The per-line note leaves the keyboard over the bottom exchange button.
+    // Observed on Demo HC#2754: an enabled but hidden button ignores taps.
+    if (await browser.isKeyboardShown()) {
+      const hide = browser.$('-ios predicate string:type == "XCUIElementTypeButton" AND name == "Hide keyboard" AND visible == 1');
+      if (!await hide.isExisting()) throw new Error('The observed keyboard dismissal is unavailable before adding exchange items.');
+      await hide.click();
+      await browser.waitUntil(async () => !await browser.isKeyboardShown(), { timeout: 10_000 });
+    }
     const control = browser.$(s.addExchangeItemsButton);
-    await browser.waitUntil(async () => await control.isExisting() && await control.isEnabled(), {
+    await browser.waitUntil(async () => await control.isExisting() && await control.isDisplayed() && await control.isEnabled(), {
       timeout: 20_000, timeoutMsg: 'The return picker never enabled Add exchange items; select a line to return first.',
     });
     await control.click();

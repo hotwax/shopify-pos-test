@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.open-first-shipping-order",
+  "name": "Open first shipping order",
+  "description": "Read-only Shopify POS navigation through Orders > Shipping > Prepare for shipping to the first listed order detail, returning Home first when needed.",
+  "domain": "shopify-pos",
+  "scenario": "pos.open-first-shipping-order",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["smoke", "read-only", "shipping", "order-detail"]
+}

@@ -9,6 +9,7 @@ import { createScenarioContext } from '../support/context.ts';
 import { createPosContextReader } from '../support/pos-context.ts';
 import { readScenarioRequest } from '../support/input.ts';
 import { reportProgress } from '../support/progress.ts';
+import { prepareDemoPosSession } from '../support/demo-pos-session.ts';
 
 /**
  * Exchanges approved lines from one committed cash order for approved
@@ -18,10 +19,9 @@ import { reportProgress } from '../support/progress.ts';
  * sale's add-to-cart routines for the replacement side, so a multi-variant
  * replacement takes the same variant-picker path a sale does.
  *
- * Only a net-refund exchange can be committed today. A collect exchange needs
- * the cash-tender path proven from inside the exchange cart, and an even
- * exchange commits through a control this run has not yet observed; both stop
- * before the irreversible tap rather than guessing at it.
+ * Net-refund and even exchanges use their observed native controls. Collect
+ * exchanges stop before the commit checkpoint until their cash-tender path
+ * has been verified from inside an exchange cart.
  */
 describe('Shopify POS cash exchange', () => {
   it('exchanges approved lines for approved replacements and confirms the result in Shopify', async () => {
@@ -42,6 +42,7 @@ describe('Shopify POS cash exchange', () => {
     await mkdir(artifactDir, { recursive: true });
 
     await reportProgress('Checking Shopify POS is on Home with an empty cart');
+    if (request.context?.shopDomain === 'hotwax-demo.myshopify.com') await prepareDemoPosSession();
     await pos.assertHome();
     await pos.assertEmptyCart();
 

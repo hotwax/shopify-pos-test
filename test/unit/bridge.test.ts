@@ -36,6 +36,15 @@ test('round-trips a bounded Shopify order readback through the owned bridge', as
   assert.equal(response?.ok, true);
   assert.equal(response?.operation, 'readShopifyOrder');
   assert.deepEqual(response?.order, detail);
+  const withCustomer = await createShopifyOrderRequest(root, 'run-order-bridge', { orderGid: detail.gid });
+  await writeBridgeResponse(root, withCustomer, { ok: true, order: { ...detail, customer: { gid: 'gid://shopify/Customer/19', firstName: 'Synthetic', lastName: 'Customer', email: 'private@example.test', phone: '+15555555555' } } });
+  const customerResult = await consumeBridgeResponse(root, withCustomer);
+  assert.equal(customerResult?.operation, 'readShopifyOrder');
+  if (customerResult?.operation === 'readShopifyOrder') assert.deepEqual(customerResult.order?.customer, { gid: 'gid://shopify/Customer/19', firstName: 'Synthetic', lastName: 'Customer', email: '', phone: '' });
+  const invalidName = await createShopifyOrderRequest(root, 'run-order-bridge', { orderGid: detail.gid });
+  await writeBridgeResponse(root, invalidName, { ok: true, order: { ...detail, customer: { gid: 'gid://shopify/Customer/19', firstName: 'x'.repeat(161), lastName: 'Customer', email: 'private@example.test', phone: '+15555555555' } } });
+  const invalidNameResult = await consumeBridgeResponse(root, invalidName);
+  if (invalidNameResult?.operation === 'readShopifyOrder') assert.deepEqual(invalidNameResult.order?.customer, { gid: 'gid://shopify/Customer/19', firstName: '', lastName: 'Customer', email: '', phone: '' });
 });
 
 test('rejects unsafe bridge request data', async () => {

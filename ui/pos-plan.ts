@@ -50,6 +50,7 @@ export interface PosPlanInput {
   direction: ExchangeParameters['direction'];
   customerAction?: string;
   customerGid?: string;
+  createCustomer?: { gid: string; search: string };
   note: string;
   remaining: Record<string, number>;
 }
@@ -94,7 +95,7 @@ function returnReason(value: string | undefined): ReturnReason {
 
 function refundMethod(value: string | undefined): RefundMethod {
   if (value === undefined || value === '') return 'cash';
-  if (value !== 'cash' && value !== 'gift-card') throw new Error('The refund method must be cash or gift-card.');
+  if (value !== 'cash' && value !== 'gift-card' && value !== 'store-credit') throw new Error('The refund method must be cash, gift-card or store-credit.');
   return value;
 }
 
@@ -120,6 +121,7 @@ export function buildMutationParameters(input: PosPlanInput): BuiltMutationParam
       })),
       currency: input.currency.trim().toUpperCase(),
       ...(input.note.trim() ? { note: input.note.trim() } : {}),
+      ...(input.createCustomer ? { customer: input.createCustomer } : {}),
     };
     return validateCreateOrder(parameters);
   }

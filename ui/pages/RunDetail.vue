@@ -330,6 +330,7 @@ function reasonLabel(reason: string | undefined): string {
   return isReturnReason(reason) ? describeReturnReason(reason) : 'No reason recorded';
 }
 const refundMethodLabel = computed(() => {
+  if (transaction.value.refundMethod === 'store-credit') return 'Store credit';
   if (transaction.value.refundMethod === 'gift-card') return 'Gift card';
   return transaction.value.refundMethod === 'cash' ? 'Cash, original payment' : 'Not recorded';
 });

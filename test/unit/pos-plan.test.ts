@@ -99,7 +99,7 @@ test('freezes the per-line return options POS asks for, and the refund method', 
 
 test('rejects an unknown reason, refund method or customer action rather than guessing', () => {
   assert.throws(() => buildMutationParameters({ ...common, scenario: 'pos.return-cash-order', returnReason: 'Changed my mind' }), /return reason/i);
-  assert.throws(() => buildMutationParameters({ ...common, scenario: 'pos.return-cash-order', refundMethod: 'store-credit' }), /refund method/i);
+  assert.throws(() => buildMutationParameters({ ...common, scenario: 'pos.return-cash-order', refundMethod: 'crypto' }), /refund method/i);
   assert.throws(() => buildMutationParameters({ ...common, scenario: 'pos.exchange-cash-order', customerAction: 'swap' }), /customer action/i);
   assert.throws(() => buildMutationParameters({ ...common, scenario: 'pos.exchange-cash-order', customerAction: 'replace' }), /replacement customer/i);
 });

@@ -138,8 +138,8 @@ export const pos = {
   /**
    * Types a product search term and proves POS actually received it.
    *
-   * POS filters as you type, and each re-render can swallow in-flight
-   * keystrokes: typing "RED SHOES" has been observed landing as "ROES". A
+   * POS filters as you type, and native input has dropped characters:
+   * typing "RED SHOES" has been observed landing as "ROES". A
    * dropped character silently changes which products are listed, so the term
    * is read back and retyped rather than trusted.
    */
@@ -167,7 +167,7 @@ export const pos = {
         return;
       } catch { /* fall through to another attempt */ }
     }
-    throw new Error(`Shopify POS did not accept the search term "${wanted}"; the field read "${observed}" after three attempts. Its live filtering drops keystrokes, so the search was not run.`);
+    throw new Error(`Shopify POS did not accept the search term "${wanted}"; the field read "${observed}" after three attempts. Exact native input is unproven, so the search was not run.`);
   },
 
   async readCartState(): Promise<PosCartState> {
@@ -277,14 +277,14 @@ export const pos = {
       if (!percentages.length || !percentages.every(value => value === '0%') ||
           Math.abs(rowPosition.y - scrollPosition.y) > 1) continue;
 
-      const reference = readRowReference(await first.getAttribute(s.rowReference));
+      const reference = readOrderRowSummary(await first.getAttribute(s.rowReference)).reference;
       const identity = await first.getAttribute('name');
       await requireTouchable(first, 'The first order row is blocked or unavailable.');
       // Refetch immediately before the tap so a list refresh cannot silently
       // change which row is first. A stale element also fails without retries.
       const freshRows = await scroll.$$(s.orderRows).getElements();
       if (!freshRows.length || await freshRows[0].getAttribute('name') !== identity ||
-          readRowReference(await freshRows[0].getAttribute(s.rowReference)) !== reference) {
+          readOrderRowSummary(await freshRows[0].getAttribute(s.rowReference)).reference !== reference) {
         throw new Error('The first order changed during selection; return to Home and rerun.');
       }
       await freshRows[0].click();
@@ -358,7 +358,12 @@ export const pos = {
     // rows attached than it filters to, so a count guard never matched
     // (run-1789984724250). Correctness first; the poll interval bounds it.
     const matchingRows = async (): Promise<WebdriverIO.Element[]> => {
-      const rows = await browser.$(s.ordersList).$$(s.orderRows).getElements();
+      const list = browser.$(s.ordersList);
+      // POS omits OrdersList entirely for an empty filtered search. Keep the
+      // bounded wait intact rather than failing on a child lookup before the
+      // filter/empty-state evidence can be inspected (cross-store HC#2757).
+      if (!await list.isExisting()) return [];
+      const rows = await list.$$(s.orderRows).getElements();
       const matches: WebdriverIO.Element[] = [];
       for (const row of rows) {
         if (rowReference(await row.getAttribute(s.rowReference)) === expected) matches.push(row);
@@ -368,7 +373,7 @@ export const pos = {
 
     await browser.waitUntil(async () => (await matchingRows()).length === 1, {
       timeout: 20_000,
-      timeoutMsg: `POS did not expose exactly one order row for the explicit reference ${expected}.`,
+      timeoutMsg: `POS did not expose exactly one order row for the explicit reference ${expected}. Check the native sale-location filter for a cross-store order.`,
     });
 
     const matches = await matchingRows();

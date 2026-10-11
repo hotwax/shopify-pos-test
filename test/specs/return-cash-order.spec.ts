@@ -9,6 +9,7 @@ import { createScenarioContext } from '../support/context.ts';
 import { createPosContextReader } from '../support/pos-context.ts';
 import { readScenarioRequest } from '../support/input.ts';
 import { reportProgress } from '../support/progress.ts';
+import { prepareDemoPosSession } from '../support/demo-pos-session.ts';
 
 /**
  * Returns approved lines from one committed cash order and confirms the
@@ -45,6 +46,7 @@ describe('Shopify POS cash return', () => {
     await mkdir(artifactDir, { recursive: true });
 
     await reportProgress('Checking Shopify POS is on Home with an empty cart');
+    if (request.context?.shopDomain === 'hotwax-demo.myshopify.com') await prepareDemoPosSession();
     await pos.assertHome();
     await pos.assertEmptyCart();
 

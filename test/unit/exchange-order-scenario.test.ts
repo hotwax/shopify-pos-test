@@ -42,11 +42,25 @@ test('cash exchange verifies the approved direction and reads back both return a
     readContextEvidence: async (): Promise<PosContextEvidence> => ({ udid: 'device-1', shopGid: request.context!.shopGid, locationGid: request.context!.locationGid, observedAt: new Date().toISOString(), method: 'test', evidenceHash: 'test-evidence', online: true }),
     prepareExchange: async () => { calls.push('prepare-exchange'); }, selectCash: async () => { calls.push('select-cash'); },
     readSummary: async () => ({ returnLines: input.lines, purchaseLines: input.replacements, netDue: { amount: '2.00', currency: 'USD' }, tender: 'cash' }),
-    commitCash: async () => { calls.push('commit'); },
+    commitCash: async beforeCommit => { await beforeCommit(); calls.push('commit'); },
   };
   const result = await exchangeCashOrder(input, request, contextFor(calls), driver, 'device-1');
   assert.deepEqual(result, { sourceOrderGid: input.orderGid, affectedIds: { 'shopify-order': [input.orderGid], 'shopify-return': ['gid://shopify/Return/1'], 'shopify-agreement': ['gid://shopify/SalesAgreement/1'] }, netDue: { amount: '2.00', currency: 'USD' } });
-  assert.deepEqual(calls, ['read-exchange-source', `read:${input.orderGid}`, 'verify-pos-context', 'context-approved', 'prepare-exchange-cart', 'prepare-exchange', 'select-cash-exchange', 'select-cash', 'verify-exchange-summary', 'verify-pos-context-before-commit', 'context-approved', 'commit-checkpoint', 'commit-exchange-cash', 'commit', 'read-shopify-exchange', `read:${input.orderGid}`, 'verify-shopify-exchange', `resource:shopify-order:${input.orderGid}`, 'resource:shopify-return:gid://shopify/Return/1', 'resource:shopify-agreement:gid://shopify/SalesAgreement/1', 'effect-confirmed']);
+  assert.deepEqual(calls, ['read-exchange-source', `read:${input.orderGid}`, 'verify-pos-context', 'context-approved', 'prepare-exchange-cart', 'prepare-exchange', 'select-cash-exchange', 'select-cash', 'verify-exchange-summary', 'verify-pos-context-before-commit', 'context-approved', 'commit-exchange-cash', 'commit-checkpoint', 'commit', 'read-shopify-exchange', `read:${input.orderGid}`, 'verify-shopify-exchange', `resource:shopify-order:${input.orderGid}`, 'resource:shopify-return:gid://shopify/Return/1', 'resource:shopify-agreement:gid://shopify/SalesAgreement/1', 'effect-confirmed']);
+});
+
+test('an unsupported or unavailable final control does not record a commit attempt', async () => {
+  const calls: string[] = [];
+  const driver: ExchangeOrderDriver = {
+    readContextEvidence: async () => ({ udid: 'device-1', shopGid: request.context!.shopGid, locationGid: request.context!.locationGid, observedAt: new Date().toISOString(), method: 'test', evidenceHash: 'test-evidence', online: true }),
+    prepareExchange: async () => undefined,
+    selectCash: async () => undefined,
+    readSummary: async () => ({ returnLines: input.lines, purchaseLines: input.replacements, netDue: { amount: '2.00', currency: 'USD' }, tender: 'cash' }),
+    commitCash: async () => { throw new Error('Final control unavailable'); },
+  };
+  await assert.rejects(() => exchangeCashOrder(input, request, contextFor(calls), driver, 'device-1'), /Final control unavailable/);
+  assert.equal(calls.includes('commit-checkpoint'), false);
+  assert.equal(calls.includes('effect-confirmed'), false);
 });
 
 test('exchange blocks direction drift before commit', async () => {

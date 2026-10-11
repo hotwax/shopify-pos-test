@@ -17,6 +17,8 @@
     "test:shell": "node --import tsx --test test/browser/*.spec.ts",
     "doctor": "tsx scripts/doctor.ts",
     "test:orders": "node --import tsx scripts/run-test.ts --id pos.open-first-order",
+    "test:shipping-order": "node --import tsx scripts/run-test.ts --id pos.open-first-shipping-order",
+    "test:hotwax-reject-preview": "node --import tsx scripts/run-test.ts --id pos.open-hotwax-reject-preview",
     "test:inspect": "node --import tsx scripts/run-test.ts --id pos.inspect-screen",
     "test:inspect-cart": "node --import tsx scripts/run-test.ts --id pos.inspect-cart",
     "test:inspect-product-search": "node --import tsx scripts/run-test.ts --id pos.inspect-product-search",

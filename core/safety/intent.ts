@@ -23,6 +23,12 @@ function assertLines(lines: { lineGid?: string; variantGid?: string; quantity: n
 export function assertAllowedIntent(intent: TransactionIntent, evidence: PosContextEvidence, approvedTargets: TargetContext[], now = Date.now()): void {
   if (!intent.scenario || !intent.sourceHash) throw new Error('Transaction intent is not frozen to a reviewed source.');
   if (intent.tender !== 'cash') throw new Error('Only cash tender is approved for the first transaction release.');
+  if (intent.refundMethod === 'store-credit') {
+    if (intent.context.omsOrigin !== 'https://demo-maarg.hotwax.io' || intent.context.shopDomain !== 'hotwax-demo.myshopify.com' ||
+      !/^gid:\/\/shopify\/Customer\/[A-Za-z0-9_-]+$/.test(intent.refundCustomerGid ?? '')) {
+      throw new Error('Native store-credit refunds require the exact approved Demo shop and frozen source customer.');
+    }
+  }
   if (!['collect', 'even', 'refund'].includes(intent.expectedDirection)) throw new Error('Transaction direction is invalid.');
   assertLines(intent.returnLines, 'Return lines');
   assertLines(intent.purchaseLines, 'Purchase lines');

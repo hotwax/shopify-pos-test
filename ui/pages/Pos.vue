@@ -312,7 +312,7 @@
                 <div class="card-heading">
                   <div>
                     <ion-card-title>Order details</ion-card-title>
-                    <ion-card-subtitle>Only the order note is written onto the test order today.</ion-card-subtitle>
+                    <ion-card-subtitle>Select an existing customer for this test sale.</ion-card-subtitle>
                   </div>
                 </div>
               </ion-card-header>
@@ -357,7 +357,7 @@
                 </ion-item>
 
                 <ion-item lines="none" class="executed-field">
-                  <ion-textarea v-model="cart.note" label="Order note" label-placement="stacked" aria-label="Order note" placeholder="Written onto the test order" auto-grow :maxlength="200" />
+                  <ion-textarea v-model="cart.note" label="Order note" label-placement="stacked" aria-label="Order note" placeholder="Order-note entry is not available yet" disabled auto-grow :maxlength="200" />
                 </ion-item>
               </ion-card-content>
             </ion-card>
@@ -407,6 +407,7 @@
                     <div class="cart-totals" v-if="!cart.isEmpty">
                       <div><span>Subtotal</span><span>{{ cart.subtotal ? `${cart.subtotal} ${cart.currency}` : 'Unknown' }}</span></div>
                       <div><span>Tender</span><span>Cash</span></div>
+                      <div v-if="cart.planning.customer?.mode === 'existing'"><span>Customer</span><span>{{ customerLabel(cart.planning.customer) }}</span></div>
                     </div>
                     <ion-note v-if="cart.unplannedSelectionLines.length" color="medium"><p>{{ cart.unplannedSelectionLines.length === 1 ? 'One line has' : `${cart.unplannedSelectionLines.length} lines have` }} an unknown variant layout. The run will watch whether POS adds the product directly or opens its variant picker, and report which.</p></ion-note>
 
@@ -840,7 +841,7 @@ const directionPreview = computed(() => {
 const directionDisagrees = computed(() => Boolean(computedDirection.value) && computedDirection.value !== direction.value);
 
 function describeRefundMethod(method: RefundMethod): string {
-  return method === 'gift-card' ? 'Gift card' : 'Cash, original payment';
+  return method === 'store-credit' ? 'Store credit' : method === 'gift-card' ? 'Gift card' : 'Cash, original payment';
 }
 function orderCustomerLabel(customer: OmsOrderCustomer): string {
   const name = [customer.firstName, customer.lastName].map(part => part.trim()).filter(Boolean).join(' ');
@@ -941,6 +942,7 @@ function planInput(): PosPlanInput {
     // check proves the customer the operator approved rather than assuming it.
     ...(isExchangeScenario.value ? { customerAction: customerAction.value, ...(customerAction.value === 'replace' ? { customerGid: exchangeCustomerGid.value } : {}) } : {}),
     note: fromCart ? cart.note : note.value,
+    ...(fromCart && cart.planning.customer ? { createCustomer: { gid: cart.planning.customer.gid, search: [cart.planning.customer.firstName, cart.planning.customer.lastName].filter(Boolean).join(' ') } } : {}),
     remaining: Object.fromEntries((selectedOrderDetail.value?.lines ?? []).map(line => [line.gid, line.refundableQuantity ?? -1])),
   };
 }

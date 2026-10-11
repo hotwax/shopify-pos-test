@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import dotenv from 'dotenv';
 import { loadCatalog } from '../core/catalog/load.ts';
@@ -20,10 +21,14 @@ if (!scriptId) throw new Error('Provide a catalog script ID with --id <id>.');
 const catalog = await loadCatalog(root);
 const script = catalog.scripts.find(candidate => candidate.id === scriptId);
 if (!script) throw new Error(`Catalog script is unavailable: ${scriptId}`);
+const parametersIndex = process.argv.indexOf('--parameters-file');
+const parametersPath = parametersIndex >= 0 ? process.argv[parametersIndex + 1] : undefined;
+if (parametersIndex >= 0 && !parametersPath) throw new Error('Provide a JSON file with --parameters-file <path>.');
+const parameters = parametersPath ? JSON.parse(await readFile(resolve(parametersPath), 'utf8')) : script.parameters;
 const request = {
   scriptId: script.id,
   deviceProfileId: 'cli-device',
-  parameters: script.parameters,
+  parameters,
   assertionMode: script.assertionMode,
   expectedRevision: 'pending',
 } as const;
@@ -53,6 +58,9 @@ const coordinator = createCoordinator({
     const env = {
       ...makeWorkerEnvironment({ id: request.deviceProfileId, ...device }, runId, artifactDir, appiumPort, wdaLocalPort, wdaDerivedDataPath, root, inputFile),
       WDIO_ENTRY: scenario.entry,
+      ...(script.id === 'pos.receiving-performance' ? { POS_PRIVATE_INPUT: '1' } : {}),
+      ...(process.env.SHOPIFY_POS_PREVIEW_URL ? { SHOPIFY_POS_PREVIEW_URL: process.env.SHOPIFY_POS_PREVIEW_URL } : {}),
+      ...(process.env.SHOPIFY_POS_UI_ONLY === '1' ? { SHOPIFY_POS_UI_ONLY: '1' } : {}),
     };
     return spawn(resolve(root, 'node_modules/@wdio/cli/bin/wdio.js'), ['run', resolve(root, 'wdio.conf.ts')], { cwd: root, env, cleanupMarkers: ['xcodebuild', wdaDerivedDataPath] });
   },
@@ -61,7 +69,7 @@ const coordinator = createCoordinator({
 const accepted = await coordinator.startRun({
   scriptId: script.id,
   deviceProfileId: device.udid,
-  parameters: script.parameters,
+  parameters,
   assertionMode: script.assertionMode,
   expectedRevision: revision,
 });

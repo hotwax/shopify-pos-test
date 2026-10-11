@@ -25,11 +25,13 @@ export interface CreateOrderParameters {
   }[];
   currency: string;
   note?: string;
+  /** Existing customer selected by exact ID in native POS. No contact data. */
+  customer?: { gid: string; search: string };
 }
 
 /** How the money goes back. POS offers these on its refund-method chooser. */
-export type RefundMethod = 'cash' | 'gift-card';
-export const refundMethods: readonly RefundMethod[] = ['cash', 'gift-card'];
+export type RefundMethod = 'cash' | 'gift-card' | 'store-credit';
+export const refundMethods: readonly RefundMethod[] = ['cash', 'gift-card', 'store-credit'];
 
 /** What the exchange does with the source order's customer. */
 export type CustomerAction = 'keep' | 'remove' | 'replace';
@@ -120,7 +122,13 @@ export function validateCreateOrder(input: CreateOrderParameters): CreateOrderPa
   const currency = typeof input.currency === 'string' ? input.currency.trim().toUpperCase() : '';
   if (!/^[A-Z]{3}$/.test(currency)) throw new Error('A create-order plan requires an exact ISO currency.');
   if (input.note !== undefined && (typeof input.note !== 'string' || input.note.length > 200)) throw new Error('The order note is too long.');
-  return { lines, currency, ...(input.note === undefined ? {} : { note: input.note }) };
+  let customer: CreateOrderParameters['customer'];
+  if (input.customer !== undefined) {
+    const search = typeof input.customer?.search === 'string' ? input.customer.search.trim() : '';
+    if (!customerGid.test(input.customer?.gid ?? '') || !search || search.length > 80 || /[\0\r\n"\\]/.test(search)) throw new Error('A create-order customer requires an exact Shopify customer GID and a bounded search name.');
+    customer = { gid: input.customer.gid, search };
+  }
+  return { lines, currency, ...(input.note === undefined ? {} : { note: input.note }), ...(customer ? { customer } : {}) };
 }
 
 function returnNote(value: unknown): string | undefined {
@@ -151,7 +159,7 @@ function validateReturnLines(lines: ReturnParameters['lines'], remaining: Record
 
 function refundMethodOf(value: unknown): RefundMethod {
   if (value === undefined) return 'cash';
-  if (typeof value !== 'string' || !refundMethods.includes(value as RefundMethod)) throw new Error('The refund method must be cash or gift-card.');
+  if (typeof value !== 'string' || !refundMethods.includes(value as RefundMethod)) throw new Error('The refund method must be cash, gift-card or store-credit.');
   return value as RefundMethod;
 }
 

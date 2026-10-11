@@ -32,6 +32,8 @@ export function createCashOrderIntent(parameters: CreateOrderParameters, request
     context: request.context,
     returnLines: [],
     purchaseLines: parameters.lines,
+    ...(parameters.customer ? { customer: { action: 'replace', gid: parameters.customer.gid } as const } : {}),
+    ...(parameters.note !== undefined ? { orderNote: parameters.note } : {}),
     tender: 'cash',
     expectedDirection: 'collect',
     maximumAbsoluteAmount: { amount: '0', currency: parameters.currency },

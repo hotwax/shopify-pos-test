@@ -155,6 +155,11 @@ accessibility tree through WDA and saves `current-screen.xml` and
 navigation, reset, alert dismissal or iPad-settings action, so it is the safe
 first command when documenting a new Shopify POS screen or version.
 
+`npm run test:shipping-order` returns to POS Home when needed, opens Orders > Shipping >
+Prepare for shipping, and opens the first listed order. It verifies the order
+reference against the selected row and captures the detail screen. It makes no
+store-data change and leaves the order detail open for inspection.
+
 `npm run test:inspect-product-search` is also read-only with respect to store
 data. It uses the observed Home search control, opens the product-search
 surface, verifies that exactly one native search field is visible, and saves

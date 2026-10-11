@@ -3,6 +3,8 @@ import { join, resolve } from 'node:path';
 import { browser } from '@wdio/globals';
 import { readScenarioRequest } from '../support/input.ts';
 import * as s from '../screens/pos.selectors.ts';
+import { prepareDemoPosSession } from '../support/demo-pos-session.ts';
+import { isPresent, waitForGone } from '../screens/wait.ts';
 
 describe('Shopify POS Home navigation utility', () => {
   it('returns to Home through the observed native tab without resetting POS', async () => {
@@ -14,6 +16,16 @@ describe('Shopify POS Home navigation utility', () => {
       throw new Error('Dismiss the blocking iOS/POS alert yourself before testing.');
     }
 
+    await prepareDemoPosSession();
+    let closedReceipt = false;
+    if (await isPresent(s.receiptOptionsEmail) && await isPresent(s.receiptOptionsText)) {
+      const done = browser.$(s.receiptOptionsDone);
+      if (!await done.isEnabled()) throw new Error('The native receipt does not offer the observed Done action.');
+      const rect = await browser.getElementRect((await done.getElement()).elementId);
+      await browser.execute('mobile: tap', { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) });
+      await waitForGone(s.receiptOptionsEmail, { timeout: 20_000, timeoutMsg: 'The native receipt did not close after Done.' });
+      closedReceipt = true;
+    }
     const homeTab = await browser.$(s.homeTab).getElement();
     let closedSearch = false;
     let closedDetail = false;
@@ -82,6 +94,6 @@ describe('Shopify POS Home navigation utility', () => {
     await mkdir(artifactDir, { recursive: true });
     await writeFile(join(artifactDir, 'home-navigation.xml'), await browser.getPageSource());
     await browser.saveScreenshot(join(artifactDir, 'home-navigation.png'));
-    await writeFile(join(artifactDir, 'home-navigation.json'), JSON.stringify({ alreadyHome, closedSearch, closedDetail, homeSelected: true }, null, 2));
+    await writeFile(join(artifactDir, 'home-navigation.json'), JSON.stringify({ alreadyHome, closedSearch, closedDetail, closedReceipt, homeSelected: true }, null, 2));
   });
 });

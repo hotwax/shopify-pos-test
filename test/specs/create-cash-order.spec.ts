@@ -9,6 +9,9 @@ import { hashIntent } from '../../core/safety/intent.ts';
 import { createScenarioContext } from '../support/context.ts';
 import { readScenarioRequest } from '../support/input.ts';
 import { reportProgress } from '../support/progress.ts';
+import { prepareDemoPosSession } from '../support/demo-pos-session.ts';
+import { attachExistingCustomer, assertSelectedCustomer } from '../screens/pos-customer.ts';
+import { createPosContextReader } from '../support/pos-context.ts';
 
 /**
  * Orchestrates one bounded cash sale from the frozen request and records it
@@ -36,6 +39,7 @@ describe('Shopify POS cash order', () => {
     // The same safety validation the planner ran, so a hand-built request
     // cannot smuggle in an unbounded line or an unknown selection value.
     const parameters = validateCreateOrder(request.parameters as unknown as Parameters<typeof validateCreateOrder>[0]);
+    if (parameters.note) throw new Error('Native order-note selection is awaiting live control discovery; no sale was attempted.');
     const lines: CartLineRequest[] = parameters.lines;
 
     // The frozen intent is what the ledger is keyed by. It needs the iPad
@@ -48,15 +52,24 @@ describe('Shopify POS cash order', () => {
     await mkdir(artifactDir, { recursive: true });
 
     await reportProgress('Checking Shopify POS is on Home with an empty cart');
+    if (request.context?.shopDomain === 'hotwax-demo.myshopify.com') await prepareDemoPosSession();
     await pos.assertHome();
     await pos.assertEmptyCart();
+    const contextReader = createPosContextReader(process.env.IOS_TESTING_ROOT ?? process.cwd(), process.env.IOS_UDID?.trim() ?? '');
+    await context.assertAllowedIntent(intent, await contextReader.read());
+    if (parameters.customer) {
+      await attachExistingCustomer(parameters.customer.search);
+      await reportProgress('The native cart carries the planned existing customer', { customerGid: parameters.customer.gid });
+    }
     await reportProgress('POS is on Home and the cart is empty');
 
     const cartLines = await buildCart(lines);
+    if (parameters.customer) await assertSelectedCustomer(parameters.customer.search);
     const total = await readBoundedCartTotal(artifactDir);
     let notBefore = '';
     const payment = await payExactCash(total, artifactDir, {
       beforeCommit: async () => {
+        await context.assertAllowedIntent(intent, await contextReader.restamp());
         // The OMS correlation looks for an order created no earlier than this.
         notBefore = new Date().toISOString();
         await reportProgress('Recording the commit attempt in the run ledger', { intentHash });

@@ -305,9 +305,17 @@ function boundedOrder(value: unknown): OmsShopifyOrderDetail | null {
     name,
     financialStatus: boundedText(item.financialStatus, 80),
     fulfillmentStatus: boundedText(item.fulfillmentStatus, 80),
-    // The customer is planning metadata for the browser only. The native worker
-    // has no use for it, so no customer PII crosses this boundary.
-    customer: null,
+    // Native customer-bound returns need the source name to match the cart,
+    // as well as its GID for target verification. Never pass contact details.
+    customer: item.customer && typeof item.customer === 'object' && boundedGid((item.customer as Record<string, unknown>).gid, /^gid:\/\/shopify\/Customer\/[A-Za-z0-9_-]+$/)
+      ? {
+          gid: (item.customer as { gid: string }).gid,
+          firstName: boundedText((item.customer as Record<string, unknown>).firstName, 160) ?? '',
+          lastName: boundedText((item.customer as Record<string, unknown>).lastName, 160) ?? '',
+          email: '',
+          phone: '',
+        }
+      : null,
     total: item.total === null ? null : boundedMoney(item.total),
     paymentGatewayNames,
     transactions,

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.open-hotwax-reject-multi-preview",
+  "name": "Preview a two-item HotWax rejection",
+  "description": "Search All orders for HCDEV#5728 and verify per-item reasons, live inventory, cancellation and first-page mixed rejection/packing confirmation without saving.",
+  "domain": "shopify-pos",
+  "scenario": "pos.open-hotwax-reject-preview",
+  "scenarioVersion": 1,
+  "parameters": { "orderReference": "HCDEV#5728" },
+  "assertionMode": "pos",
+  "tags": ["smoke", "read-only", "shipping", "extension", "multi-item"]
+}

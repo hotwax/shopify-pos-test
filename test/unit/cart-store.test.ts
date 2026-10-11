@@ -70,7 +70,7 @@ test('planning-only fields in use are reported so the UI can say they will not r
   cart.addCode('discountCodes', 'SAVE10');
   cart.setNewCustomer({ ...emptyCustomer(), email: 'tester@example.com' });
 
-  assert.deepEqual(cart.planningOnlyInUse, ['Delivery method', 'Discount codes', 'Customer']);
+  assert.deepEqual(cart.planningOnlyInUse, ['Delivery method', 'Discount codes', 'New customer']);
 });
 
 test('duplicate codes are ignored and codes can be removed', () => {
@@ -124,7 +124,7 @@ test('seeding from an order copies its customer into the planned order', () => {
   assert.equal(cart.planning.customer?.mode, 'existing');
   assert.equal(cart.planning.customer?.gid, 'gid://shopify/Customer/5');
   assert.equal(cart.planning.customer?.firstName, 'Ada');
-  // A customer is still planning-only, so it must never reach the frozen lines.
+  // Customer identity is frozen separately; contact details stay out of lines.
   assert.doesNotMatch(JSON.stringify(cart.executableLines), /Ada|Lovelace|ada@example/i);
 });
 
@@ -210,7 +210,7 @@ test('a customer never reaches the executable lines', () => {
   cart.setExistingCustomer({ gid: 'gid://shopify/Customer/5', displayName: 'Ada L', firstName: 'Ada', lastName: 'L', email: 'ada@example.com', phone: null, orderCount: 3, location: null });
 
   assert.doesNotMatch(JSON.stringify(cart.executableLines), /Customer|ada@example/i);
-  assert.deepEqual(cart.planningOnlyInUse, ['Customer']);
+  assert.deepEqual(cart.planningOnlyInUse, []);
 });
 
 test('the customer label falls back rather than showing an empty name', () => {
@@ -222,7 +222,7 @@ test('the customer label falls back rather than showing an empty name', () => {
 test('clearing the customer removes it from the planning-only report', () => {
   const cart = store();
   cart.setNewCustomer({ ...emptyCustomer(), firstName: 'Ada' });
-  assert.deepEqual(cart.planningOnlyInUse, ['Customer']);
+  assert.deepEqual(cart.planningOnlyInUse, ['New customer']);
 
   cart.clearCustomer();
   assert.deepEqual(cart.planningOnlyInUse, []);

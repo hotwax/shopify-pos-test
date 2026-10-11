@@ -17,10 +17,13 @@ export interface TransactionIntent {
   purchaseLines: { variantGid: string; quantity: number }[];
   tender: 'cash';
   /** How the money goes back on a refund, and how a difference is collected. */
-  refundMethod?: 'cash' | 'gift-card';
+  refundMethod?: 'cash' | 'gift-card' | 'store-credit';
+  /** Exact source-order customer receiving a native store-credit refund. */
+  refundCustomerGid?: string;
   collectMethod?: 'cash';
   /** What the exchange does with the source order's customer. */
   customer?: { action: 'keep' | 'remove' | 'replace'; gid?: string };
+  orderNote?: string;
   expectedDirection: 'collect' | 'even' | 'refund';
   maximumAbsoluteAmount: Money;
 }

@@ -13,6 +13,16 @@ import { isPresent, waitForGone } from './wait.ts';
  */
 export const posReset = {
   async clearCartAndReturnHome(): Promise<void> {
+    // A committed even exchange has a distinct receipt surface, although
+    // Home remains visible behind it. Dismiss only its observed Done control;
+    // receipt sending controls are never tapped.
+    if (await isPresent(s.receiptOptionsEmail) && await isPresent(s.receiptOptionsText)) {
+      const done = browser.$(s.receiptOptionsDone);
+      if (!await done.isEnabled()) throw new Error('The native receipt does not offer its observed Done action.');
+      const rect = await browser.getElementRect((await done.getElement()).elementId);
+      await browser.execute('mobile: tap', { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) });
+      await waitForGone(s.receiptOptionsEmail, { timeout: 20_000, timeoutMsg: 'The native receipt did not close after Done.' });
+    }
     // Overlays are dismissed outermost-first so the cart controls become
     // hittable. Each of these surfaces leaves the tree when it closes, so one
     // predicate query over their names says which are open, instead of six

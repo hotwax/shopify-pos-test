@@ -43,12 +43,12 @@ test('cash return revalidates source eligibility, checks summary, and reads back
     prepareReturn: async () => { calls.push('prepare-return'); },
     selectCash: async () => { calls.push('select-cash'); },
     readSummary: async () => ({ lines: input.lines, refund: { amount: '10.00', currency: 'USD' }, tender: 'cash' }),
-    commitCash: async () => { calls.push('commit'); },
+    commitCash: async beforeCommit => { await beforeCommit(); calls.push('commit'); },
   };
   const result = await returnCashOrder(input, request, contextFor(calls), driver, 'device-1');
   assert.deepEqual(result, { orderGid: input.orderGid, affectedIds: { 'shopify-order': [input.orderGid], 'shopify-return': ['gid://shopify/Return/1'], 'shopify-agreement': ['gid://shopify/SalesAgreement/1'] } });
   assert.deepEqual(calls, [
-    'read-return-source', `read:${input.orderGid}`, 'verify-pos-context', 'context-approved', 'prepare-return-cart', 'prepare-return', 'select-cash-refund', 'select-cash', 'verify-return-summary', 'verify-pos-context-before-commit', 'context-approved', 'commit-checkpoint', 'commit-return-cash', 'commit', 'read-shopify-return', `read:${input.orderGid}`, 'verify-shopify-return',
+    'read-return-source', `read:${input.orderGid}`, 'verify-pos-context', 'context-approved', 'prepare-return-cart', 'prepare-return', 'select-cash-refund', 'select-cash', 'verify-return-summary', 'verify-pos-context-before-commit', 'context-approved', 'commit-return-cash', 'commit-checkpoint', 'commit', 'read-shopify-return', `read:${input.orderGid}`, 'verify-shopify-return',
     `resource:shopify-order:${input.orderGid}`, 'resource:shopify-return:gid://shopify/Return/1', 'resource:shopify-agreement:gid://shopify/SalesAgreement/1', 'effect-confirmed',
   ]);
 });
@@ -58,7 +58,7 @@ test('cash return refuses a non-cash source before touching native POS', async (
   const driver: ReturnOrderDriver = {
     readContextEvidence: async (): Promise<PosContextEvidence> => ({ udid: 'device-1', shopGid: request.context!.shopGid, locationGid: request.context!.locationGid, observedAt: new Date().toISOString(), method: 'test', evidenceHash: 'test-evidence', online: true }),
     prepareReturn: async () => { calls.push('prepare-return'); }, selectCash: async () => { calls.push('select-cash'); },
-    readSummary: async () => ({ lines: input.lines, refund: { amount: '10.00', currency: 'USD' }, tender: 'cash' }), commitCash: async () => { calls.push('commit'); },
+    readSummary: async () => ({ lines: input.lines, refund: { amount: '10.00', currency: 'USD' }, tender: 'cash' }), commitCash: async beforeCommit => { await beforeCommit(); calls.push('commit'); },
   };
   await assert.rejects(() => returnCashOrder(input, request, contextFor(calls, { ...before, paymentGatewayNames: ['credit_card'] }), driver, 'device-1'), /cash/i);
   assert.deepEqual(calls, ['read-return-source', `read:${input.orderGid}`]);
@@ -69,8 +69,21 @@ test('cash return refuses a developer-only source ID without a POS order referen
   const driver: ReturnOrderDriver = {
     readContextEvidence: async (): Promise<PosContextEvidence> => ({ udid: 'device-1', shopGid: request.context!.shopGid, locationGid: request.context!.locationGid, observedAt: new Date().toISOString(), method: 'test', evidenceHash: 'test-evidence', online: true }),
     prepareReturn: async () => { calls.push('prepare-return'); }, selectCash: async () => { calls.push('select-cash'); },
-    readSummary: async () => ({ lines: input.lines, refund: { amount: '10.00', currency: 'USD' }, tender: 'cash' }), commitCash: async () => { calls.push('commit'); },
+    readSummary: async () => ({ lines: input.lines, refund: { amount: '10.00', currency: 'USD' }, tender: 'cash' }), commitCash: async beforeCommit => { await beforeCommit(); calls.push('commit'); },
   };
   await assert.rejects(() => returnCashOrder({ ...input, orderReference: undefined }, request, contextFor(calls), driver, 'device-1'), /POS order reference/i);
   assert.deepEqual(calls, []);
+});
+
+test('store-credit return refuses a source without an existing customer before native actions', async () => {
+  const calls: string[] = [];
+  const driver: ReturnOrderDriver = {
+    readContextEvidence: async () => { throw new Error('must not read native context'); },
+    prepareReturn: async () => { throw new Error('must not prepare a return'); },
+    selectCash: async () => { throw new Error('must not choose a method'); },
+    readSummary: async () => { throw new Error('must not read native summary'); },
+    commitCash: async () => { throw new Error('must not commit'); },
+  };
+  await assert.rejects(() => returnCashOrder({ ...input, refundMethod: 'store-credit' }, request, contextFor(calls), driver, 'device-1'), /existing source customer/i);
+  assert.deepEqual(calls, ['read-return-source', `read:${input.orderGid}`]);
 });

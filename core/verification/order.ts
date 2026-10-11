@@ -1,4 +1,4 @@
-import type { OmsShopifyOrderDetail } from '../../shared/contracts.ts';
+import type { Money, OmsShopifyOrderDetail } from '../../shared/contracts.ts';
 import type { CreateOrderParameters, ExchangeParameters, RefundMethod, ReturnParameters } from '../safety/transaction-inputs.ts';
 import { compareMoney } from '../safety/money.ts';
 
@@ -28,6 +28,10 @@ export function verifyCreatedOrder(actual: OmsShopifyOrderDetail, expected: Crea
   checks.push(check('total', totalMatch, totalMatch ? 'The read-back total is within the approved currency and amount bound.' : 'The read-back total is missing, in a different currency, negative or over the approved bound.'));
   const cash = tender === 'cash' && actual.paymentGatewayNames.some(gateway => gateway.trim().toLowerCase() === 'cash');
   checks.push(check('cash-tender', cash, cash ? 'The POS and Shopify read-back both report cash.' : 'The POS or Shopify read-back does not report the approved cash tender.'));
+  if (expected.customer) {
+    const matches = actual.customer?.gid === expected.customer.gid;
+    checks.push(check('customer', matches, matches ? 'Shopify carries the exact planned customer.' : 'Shopify does not carry the exact planned customer.'));
+  }
   return { passed: checks.every(item => item.passed), checks };
 }
 
@@ -103,7 +107,8 @@ function verifyReturnReasons(before: OmsShopifyOrderDetail, after: OmsShopifyOrd
 }
 
 /** Shopify's gateway name for each refund method POS offers. */
-const refundGateways: Record<RefundMethod, string> = { cash: 'cash', 'gift-card': 'gift_card' };
+// Shopify's official refundCreate store-credit response uses shopify_store_credit.
+const refundGateways: Record<RefundMethod, string> = { cash: 'cash', 'gift-card': 'gift_card', 'store-credit': 'shopify_store_credit' };
 
 function verifyRefundMethod(before: OmsShopifyOrderDetail, after: OmsShopifyOrderDetail, expected: ReturnParameters): VerificationCheck {
   const wanted = refundGateways[expected.refundMethod];
@@ -113,7 +118,7 @@ function verifyRefundMethod(before: OmsShopifyOrderDetail, after: OmsShopifyOrde
   return check('refund-method', passed, passed ? `Shopify refunded through the approved ${expected.refundMethod} method.` : `Shopify refunded through ${[...new Set(gateways)].join('/')}, not the approved ${wanted}.`);
 }
 
-export function verifyReturnedOrder(before: OmsShopifyOrderDetail, after: OmsShopifyOrderDetail, expected: ReturnParameters): VerificationResult {
+export function verifyReturnedOrder(before: OmsShopifyOrderDetail, after: OmsShopifyOrderDetail, expected: ReturnParameters, observedRefund?: Money): VerificationResult {
   const checks: VerificationCheck[] = [];
   checks.push(check('identity', before.gid === after.gid && before.gid === expected.orderGid, before.gid === after.gid ? 'The return read-back is for the approved source order.' : 'The return read-back is for a different order.'));
   const cash = after.paymentGatewayNames.some(gateway => gateway.trim().toLowerCase() === 'cash');
@@ -122,6 +127,18 @@ export function verifyReturnedOrder(before: OmsShopifyOrderDetail, after: OmsSho
   checks.push(verifyRestock(before, after, expected));
   checks.push(verifyReturnReasons(before, after, expected));
   checks.push(verifyRefundMethod(before, after, expected));
+  if (expected.refundMethod === 'store-credit') {
+    const transactions = newRefunds(before, after).flatMap(refund => refund.transactions);
+    const customerMatches = Boolean(before.customer?.gid) && before.customer?.gid === after.customer?.gid;
+    checks.push(check('store-credit-customer', customerMatches, 'The native credit refund retains the exact source-order customer.'));
+    // One full native credit tender: failed/pending transactions, split tenders,
+    // another currency or a different amount cannot satisfy acceptance.
+    const transaction = transactions[0];
+    const amountMatches = transactions.length === 1 && Boolean(observedRefund && transaction?.amount) &&
+      transaction!.kind.toUpperCase() === 'REFUND' && transaction!.status.toUpperCase() === 'SUCCESS' &&
+      transaction!.amount!.currency === observedRefund!.currency && compareMoney(transaction!.amount!, observedRefund!) === 0;
+    checks.push(check('store-credit-amount', amountMatches, 'Shopify must confirm one successful credit refund for the exact native amount.'));
+  }
   return { passed: checks.every(item => item.passed), checks };
 }
 

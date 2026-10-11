@@ -26,13 +26,8 @@ export interface CartLine {
   productVariantCount: number | null;
 }
 
-// Fields the native runner cannot perform yet. They are kept in the cart so a
-// tester can describe the order they mean to build, but `executableLines` and
-// the frozen run parameters never read them. Everything here is planning notes
-// until the transaction contract and the native POS selectors carry it.
-// Either a customer that already exists in the test store, or the details a
-// tester wants the run to enter in Shopify POS's own "add customer" form. The
-// second kind is never created here: this app exposes no Shopify mutation.
+// Existing customers are selected natively and frozen by GID. New-customer
+// creation remains planning-only; this app exposes no customer mutation.
 export interface PlannedCustomer {
   mode: 'existing' | 'new';
   gid: string;
@@ -124,7 +119,7 @@ export const useCartStore = defineStore('cart', {
       return total.toFixed(2);
     },
 
-    // The only part of the cart a run is frozen against.
+    // Product lines frozen into the run, alongside an existing customer.
     // `search` is what the native run types into POS product search before
     // matching the row by exact product id. `variantSelection` tells the run
     // whether to expect the product to drop into the cart or to open the
@@ -150,7 +145,7 @@ export const useCartStore = defineStore('cart', {
       if (state.planning.deliveryMethod.trim() && state.planning.deliveryMethod !== 'In store') used.push('Delivery method');
       if (state.planning.discountCodes.length) used.push('Discount codes');
       if (state.planning.giftCardCodes.length) used.push('Gift card codes');
-      if (state.planning.customer) used.push('Customer');
+      if (state.planning.customer?.mode === 'new') used.push('New customer');
       return used;
     },
 

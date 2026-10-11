@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.open-hotwax-offline-preview",
+  "name": "Preview Shopify-only reassignment",
+  "description": "Verify HCDEV#5728 can offer primary-location reassignment while the configured OMS endpoint is unreachable, without moving or saving.",
+  "domain": "shopify-pos",
+  "scenario": "pos.open-hotwax-reject-preview",
+  "scenarioVersion": 1,
+  "parameters": {"orderReference": "HCDEV#5728", "expectFallback": "move-only"},
+  "assertionMode": "pos",
+  "tags": ["smoke", "read-only", "extension", "fallback", "offline"]
+}

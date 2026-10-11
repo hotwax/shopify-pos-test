@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.open-hotwax-context-preview",
+  "name": "Preview matching HotWax fulfillment",
+  "description": "Open HCDEV#5728 and verify the matching live OMS fulfillment returns without selecting or saving any reason.",
+  "domain": "shopify-pos",
+  "scenario": "pos.open-hotwax-reject-preview",
+  "scenarioVersion": 1,
+  "parameters": { "orderReference": "HCDEV#5728", "contextOnly": true },
+  "assertionMode": "pos",
+  "tags": ["smoke", "read-only", "extension"]
+}

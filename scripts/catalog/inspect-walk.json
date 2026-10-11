@@ -6,7 +6,14 @@
   "domain": "shopify-pos",
   "scenario": "pos.inspect-walk",
   "scenarioVersion": 1,
-  "parameters": { "steps": [] },
+  "parameters": {
+    "prepareDemoSession": true,
+    "steps": []
+  },
   "assertionMode": "pos",
-  "tags": ["diagnostic", "read-only", "discovery"]
+  "tags": [
+    "diagnostic",
+    "read-only",
+    "discovery"
+  ]
 }

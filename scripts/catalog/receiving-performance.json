@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.receiving-performance",
+  "name": "Receiving embedded performance",
+  "description": "Open Receiving on the physical iPad and capture loading and webview diagnostics without submitting inventory changes. Uses a locally saved PIN only for the configured shop.",
+  "domain": "shopify-pos",
+  "scenario": "pos.receiving-performance",
+  "scenarioVersion": 1,
+  "parameters": { "shopName": "hotwax-demo" },
+  "assertionMode": "pos",
+  "tags": ["read-only", "receiving", "performance"]
+}

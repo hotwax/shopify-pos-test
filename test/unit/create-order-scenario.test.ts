@@ -106,3 +106,13 @@ test('the recent-order lookup retries a miss while Shopify catches up, but never
   const missing = { ...contextFor([]), resolveRecentOrder: async () => { throw new Error('No POS order created since the commit matches.'); } };
   await assert.rejects(() => locateRecentCashOrder(missing, { notBefore: '2026-09-21T01:09:38.000Z', total: { amount: '171.00', currency: 'USD' }, lineCount: 2 }, { attempts: 3, sleep: async () => undefined }), /No POS order/);
 });
+
+test('customer-bound sales freeze customer identity and reject a missing or wrong readback customer', async () => {
+  const expected = { ...input, customer: { gid: 'gid://shopify/Customer/19', search: 'Morgan Avery' } };
+  assert.notEqual(hashIntent(createCashOrderIntent(input, request, 'device-1')), hashIntent(createCashOrderIntent(expected, request, 'device-1')));
+  const calls: string[] = [];
+  await assert.rejects(() => confirmCashOrder({ parameters: expected, context: contextFor(calls), intentHash: 'bound-customer', order: { orderGid: readback.gid, orderName: readback.name }, tender: 'cash' }), /customer/);
+  assert.ok(!calls.includes('effect-confirmed'));
+  const correct = { ...contextFor([]), readShopifyOrder: async () => ({ ...readback, customer: { gid: expected.customer.gid, firstName: '', lastName: '', email: '', phone: '' } }) };
+  await confirmCashOrder({ parameters: expected, context: correct, intentHash: 'bound-customer', order: { orderGid: readback.gid, orderName: readback.name }, tender: 'cash' });
+});

@@ -15,7 +15,8 @@ export interface ExchangeOrderDriver {
   prepareExchange(parameters: ExchangeParameters, source: OmsShopifyOrderDetail): Promise<void>;
   selectCash(): Promise<void>;
   readSummary(): Promise<ObservedExchangeSummary>;
-  commitCash(): Promise<void>;
+  /** Check the final native control, then checkpoint immediately before its committing tap. */
+  commitCash(beforeCommit: () => Promise<void>): Promise<void>;
 }
 
 function createIntent(parameters: ExchangeParameters, request: RunRequest, udid: string): TransactionIntent {
@@ -62,8 +63,7 @@ export async function exchangeCashOrder(
   const observed = await context.step('verify-exchange-summary', () => driver.readSummary());
   assertExchangePrecommit(observed, parameters);
   await context.step('verify-pos-context-before-commit', async () => context.assertAllowedIntent(intent, await driver.readContextEvidence()));
-  await context.recordCommitAttempt(intentHash);
-  await context.step('commit-exchange-cash', () => driver.commitCash());
+  await context.step('commit-exchange-cash', () => driver.commitCash(() => context.recordCommitAttempt(intentHash)));
   const after = await context.step('read-shopify-exchange', () => context.readShopifyOrder(parameters.orderGid));
   await context.step('verify-shopify-exchange', async () => {
     const verification = verifyExchangedOrder(source, after, parameters);

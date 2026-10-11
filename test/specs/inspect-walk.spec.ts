@@ -3,6 +3,9 @@ import { join, resolve } from 'node:path';
 import { browser } from '@wdio/globals';
 import { readScenarioRequest } from '../support/input.ts';
 import { reportProgress } from '../support/progress.ts';
+import { prepareDemoPosSession } from '../support/demo-pos-session.ts';
+import { createPosContextReader } from '../support/pos-context.ts';
+import { pos } from '../screens/pos.ts';
 
 /**
  * Read-only discovery walker. Starts from whatever POS is showing, captures
@@ -25,6 +28,31 @@ describe('Shopify POS discovery walk', () => {
     if (request.scriptId !== 'pos.inspect-walk' || request.assertionMode !== 'pos') {
       throw new Error('This native spec is bound to the pos.inspect-walk read-only request.');
     }
+    if (request.parameters.prepareDemoSession === true) {
+      await prepareDemoPosSession();
+      if (request.parameters.preserveCurrentSurface !== true) {
+      const locationsTitle = browser.$('-ios predicate string:type == "XCUIElementTypeStaticText" AND name == "Locations" AND visible == 1');
+      if (await locationsTitle.isExisting()) {
+        const close = browser.$('-ios predicate string:type == "XCUIElementTypeButton" AND name == "Component.ActionBar.PrimaryActionButton" AND label == "Close" AND visible == 1');
+        if (!await close.isEnabled()) throw new Error('The Locations picker has no observed Close control.');
+        await close.click();
+        await browser.waitUntil(async () => !await locationsTitle.isExisting(), { timeout: 10_000 });
+      }
+      // The observed cart popover hides its owning button and the tab bar.
+      // Dismiss that non-committing overlay before reading the More header.
+      const draftAction = browser.$('-ios predicate string:name == "Screen.MoreActions.SaveCart" AND visible == 1');
+      if (await draftAction.isExisting()) {
+        const owner = await browser.$('~Screen.Cart.MoreActionsButton').getElement();
+        if (await owner.getAttribute('label') !== 'More actions' || !await owner.isEnabled()) throw new Error('The observed cart popover has no safe dismissal target.');
+        const rect = await browser.getElementRect(owner.elementId);
+        await browser.execute('mobile: tap', { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) });
+        await browser.waitUntil(async () => !await draftAction.isExisting(), { timeout: 10_000 });
+      }
+      const reader = createPosContextReader(process.env.IOS_TESTING_ROOT ?? process.cwd(), process.env.IOS_UDID ?? '');
+      const evidence = await reader.read();
+      if (evidence.shopGid !== 'gid://shopify/Shop/67452731546') throw new Error('Demo discovery requires the exact hotwax-demo shop.');
+      }
+    }
     const steps = (request.parameters.steps ?? []) as WalkStep[];
     // Exact labels the operator explicitly allows despite reading like a
     // committing action (for example the cart's "Refund $120.00" control,
@@ -42,19 +70,31 @@ describe('Shopify POS discovery walk', () => {
     let previous = await capture('00-start');
 
     for (const [index, step] of steps.entries()) {
+      // Switching a real POS location reloads the local store data. Wait for
+      // the requested observed control rather than treating that loader as a
+      // missing selector or replaying the switch.
+      await browser.$(step.selector).waitForDisplayed({ timeout: 60_000 });
       const element = await browser.$(step.selector).getElement();
       const label = (await element.getAttribute('label')) ?? (await element.getAttribute('name')) ?? '';
       if (committing.test(label) && !allowLabels.has(label.trim())) {
         throw new Error(`Refusing to tap "${label}" (${step.selector}): it reads like a committing action.`);
       }
-      if (await element.getAttribute('hittable') !== 'true') throw new Error(`"${label}" (${step.selector}) is present but not hittable.`);
+      // POS's observed cart-actions popover marks its owning button unhittable.
+      // Its live rectangle is a safe dismissal target only while that exact
+      // non-committing overlay is visible; hidden controls otherwise refuse.
+      const dismissCartActions = step.selector === '~Screen.Cart.MoreActionsButton' && step.tap === 'coordinate' && await browser.$('-ios predicate string:name == "Screen.MoreActions.SaveCart" AND visible == 1').isExisting();
+      if (await element.getAttribute('hittable') !== 'true' && !(dismissCartActions && await element.isEnabled() && label === 'More actions')) throw new Error(`"${label}" (${step.selector}) is present but not hittable.`);
       await reportProgress(step.type !== undefined ? `Typing into "${label}"` : `Tapping "${label}"`, { selector: step.selector, capture: step.capture });
       const before = screenIds(previous);
       const rect = await browser.getElementRect(element.elementId);
       if (step.type !== undefined) {
         // Typing is text only; POS filters as you type, so give it a moment.
-        await element.click();
-        await element.setValue(step.type);
+        if (step.selector === '~Component.SearchBar.TextInput') await pos.typeProductSearch(step.type);
+        else {
+          await element.click();
+          await element.setValue(step.type);
+          if (await element.getAttribute('value') !== step.type) throw new Error('The native field did not retain the exact requested text.');
+        }
         await new Promise(resolvePause => setTimeout(resolvePause, 2_500));
         previous = await capture(`${String(index + 1).padStart(2, '0')}-${step.capture}`);
         continue;

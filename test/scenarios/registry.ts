@@ -94,6 +94,28 @@ const orderReference = { type: 'string', minLength: 1, maxLength: 120, pattern: 
 
 export const registry: ScenarioDescriptor[] = [
   {
+    id: 'pos.receiving-performance',
+    version: 1,
+    effect: 'read-only',
+    entry: 'test/specs/receiving-performance.spec.ts',
+    parameterSchema: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        shopName: { type: 'string', minLength: 1, maxLength: 80 },
+        expectedFrameOrigin: { type: 'string', pattern: '^https://[^/?#]+$', maxLength: 255 },
+        verifySourceUpdate: { type: 'boolean' },
+        verifyScannerKeyboard: { type: 'boolean' },
+        expandCompactKeyboard: { type: 'boolean' },
+        verifySecondaryPages: { type: 'boolean' },
+        startupOnly: { type: 'boolean' },
+        verifyPinEntry: { type: 'boolean' },
+      },
+      required: ['shopName'],
+    },
+    requiredCapabilities: ['pos-native-read'],
+    supportedAssertionModes: ['pos'],
+  },
+  {
     id: 'pos.inspect-cart',
     version: 1,
     effect: 'read-only',
@@ -133,6 +155,8 @@ export const registry: ScenarioDescriptor[] = [
       type: 'object',
       additionalProperties: false,
       properties: {
+        prepareDemoSession: { type: 'boolean' },
+        preserveCurrentSurface: { type: 'boolean' },
         steps: {
           type: 'array', maxItems: 12,
           items: {
@@ -329,6 +353,38 @@ export const registry: ScenarioDescriptor[] = [
     supportedAssertionModes: ['pos'],
   },
   {
+    id: 'pos.open-first-shipping-order',
+    version: 1,
+    effect: 'read-only',
+    entry: 'test/specs/open-first-shipping-order.spec.ts',
+    parameterSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {},
+      required: [],
+    },
+    requiredCapabilities: ['pos-native-read'],
+    supportedAssertionModes: ['pos'],
+  },
+  {
+    id: 'pos.open-hotwax-reject-preview',
+    version: 1,
+    effect: 'read-only',
+    entry: 'test/specs/open-hotwax-reject-preview.spec.ts',
+    parameterSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        orderReference: { type: 'string', enum: ['HCDEV#5728'] },
+        expectFallback: { type: 'string', enum: ['variance', 'move-only'] },
+        contextOnly: { type: 'boolean', enum: [true] },
+      },
+      required: [],
+    },
+    requiredCapabilities: ['pos-native-read'],
+    supportedAssertionModes: ['pos'],
+  },
+  {
     id: 'pos.build-cart-only',
     version: 1,
     effect: 'read-only',
@@ -423,7 +479,7 @@ export const registry: ScenarioDescriptor[] = [
     parameterSchema: {
       type: 'object',
       additionalProperties: false,
-      properties: { lines: createLines, currency: { type: 'string', pattern: '^[A-Z]{3}$' }, note: { type: 'string', maxLength: 200 } },
+      properties: { lines: createLines, currency: { type: 'string', pattern: '^[A-Z]{3}$' }, note: { type: 'string', maxLength: 200 }, customer: { type: 'object', additionalProperties: false, required: ['gid', 'search'], properties: { gid: { type: 'string', pattern: '^gid://shopify/Customer/[A-Za-z0-9_-]+$' }, search: { type: 'string', minLength: 1, maxLength: 80 } } } },
     },
     requiredCapabilities: ['pos-native-mutation', 'shopify-oms-read'],
     supportedAssertionModes: ['pos-shopify-oms'],

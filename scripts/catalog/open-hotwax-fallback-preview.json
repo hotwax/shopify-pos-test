@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.open-hotwax-fallback-preview",
+  "name": "Preview HotWax reassignment with variance",
+  "description": "Verify real OMS mismatch fallback for HCDEV#5728, primary location, stock variance and Cancel without moving or saving.",
+  "domain": "shopify-pos",
+  "scenario": "pos.open-hotwax-reject-preview",
+  "scenarioVersion": 1,
+  "parameters": {"orderReference": "HCDEV#5728", "expectFallback": "variance"},
+  "assertionMode": "pos",
+  "tags": ["smoke", "read-only", "extension", "fallback"]
+}

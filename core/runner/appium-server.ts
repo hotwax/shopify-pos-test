@@ -45,7 +45,9 @@ export function createAppiumServerHost(root: string, options: { preferredPort?: 
     owned = spawn(process.execPath, [
       resolve(root, 'node_modules/appium/build/lib/main.js'), 'server',
       '--address', '127.0.0.1', '--port', String(port),
-      '--log', logPath, '--log-level', 'info', '--log-timestamp', '--log-no-colors',
+      // Shared hosts may run saved-PIN login. Never retain input commands in
+      // the host log; scenario steps still provide non-secret diagnostics.
+      '--log', logPath, '--log-level', 'error', '--log-timestamp', '--log-no-colors',
     ], { cwd: resolve(root), env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '' } });
     const deadline = Date.now() + (options.startupTimeoutMs ?? 30_000);
     while (Date.now() < deadline) {

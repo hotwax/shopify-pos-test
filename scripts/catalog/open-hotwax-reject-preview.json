@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pos.open-hotwax-reject-preview",
+  "name": "Open HotWax Reject preview",
+  "description": "Read-only Shopify POS navigation from an open shipping order to the HotWax Reject extension preview.",
+  "domain": "shopify-pos",
+  "scenario": "pos.open-hotwax-reject-preview",
+  "scenarioVersion": 1,
+  "parameters": {},
+  "assertionMode": "pos",
+  "tags": ["smoke", "read-only", "shipping", "extension"]
+}
